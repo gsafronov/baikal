@@ -1,0 +1,606 @@
+#include "BMyReco.h"
+#include "BGeomTel.h"
+#include "BEvent.h"
+#include "BExtractedImpulse.h"
+#include "BExtractedImpulseTel.h"
+#include "BJoinExtractedImpulseTel.h"
+#include "BEventMask.h"
+#include "BChannelMask.h"
+#include "BExtractedHeader.h"
+
+//#include "BMyRecParam.h"
+
+#include "MParList.h"
+#include "MLog.h"
+#include "MLogManip.h"
+
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TProfile.h"
+#include "TFile.h"
+#include "TMath.h"
+
+#include <math.h>
+#include <vector>
+
+ClassImp(BMyReco);
+
+BMyReco::BMyReco(string fname)
+{
+  iEvent=0;
+   
+  fOUT=new TFile(fname.c_str(),"RECREATE");
+ 
+  hCharge=new TH1F("hCharge","hCharge",3000,0,30000);
+  hMapOfHits=new TH2F("hMapOfHits","hMapOfHits",20,0.5,20.5,100,80,480);
+  hPairwiseSpeed=new TH1F("hPairwiseSpeed","hPairwiseSpeed",1000,-1,100);
+  hDR=new TH1F("hDR","hDR",1000,0,1000);
+  hDT=new TH1F("hDT","hDT",1000,0,1000);
+  hNPairs=new TH1F("hNPairs","hNPairs",100,0,100);
+  hClusterSize=new TH1F("hClusterSize","hClusterSize",100,0,100);
+  hClusterSizeSS=new TH1F("hClusterSizeSS","hClusterSizeSS",100,0,100);
+  hSecNum=new TH1F("hSecNum","hSecNum",20,-0.5,19.5);
+  hSecNumQual=new TH1F("hSecNumQual","hSecNumQual",20,-0.5,19.5);
+  hDirection=new TH1F("hDirection","hDirection",3,-1.5,1.5);
+  hLLvert=new TH1F("hLLvert","hLLvert",100,0,100);
+  hDeltaTvert=new TH1F("hDeltaTvert","hDeltaTvert",2000,-1000,1000);
+  hDeltaTvertNorm=new TH1F("hDeltaTvertNorm","hDeltaTvertNorm",2000,-10,10);
+  hDeltaT_DEBUG=new TH1F("hDeltaT_DEBUG","hDeltaT_DEBUG",2000,-1000,1000);
+  hDeltaTNorm_DEBUG=new TH1F("hDeltaTNorm_DEBUG","hDeltaTNorm_DEBUG",2000,-100,100);
+  hLOverEst=new TH1F("hLOverEst","hLOverEst",10000,-100,100);
+  hLOverEstNoFac=new TH1F("hLOverEstNoFac","hLOverEstNoFac",10000,-100,100);
+  hUsedHitFrac=new TH1F("hUsedHitFrac","hUsedHitFrac",110,0,1.1);
+  hNTracksVsCut=new TH1F("hNTracksVsCut","hNTracksVsCut",100,0,100);
+  pLLvertVsCut=new TProfile("pLLvertVsCut","pLLvertVsCut",100,0,100,0,10000);
+  h_LL3_nHits=new TH2F("h_LL3_nHits","h_LL3_nHits",30,0,30,100,0,100);
+  h_LL4_nHits=new TH2F("h_LL4_nHits","h_LL4_nHits",30,0,30,100,0,100);
+  h_LL5_nHits=new TH2F("h_LL5_nHits","h_LL5_nHits",30,0,30,100,0,100);
+  clight=3e8*pow(1.33,-1);
+}
+
+BMyReco::~BMyReco()
+{
+}
+
+Int_t BMyReco::PreProcess(MParList * pList)
+{
+  std::cout<<"WE ARE IN BMyReco::PreProcess"<<std::endl;
+  
+  fExtractedImpulse = (BExtractedImpulseTel*)pList->FindObject("BJointExtractedImpulseTel", "BExtractedImpulseTel");
+  if (!fExtractedImpulse)
+    {
+      * fLog << err << AddSerialNumber("BJoinExtractedImpulseTel") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+  else std::cout<<"BJoinExtractedImpulseTel found"<<std::endl;
+  
+  
+  fExtractedHeader = (BExtractedHeader*)pList->FindObject("BJointExtractedHeader", "BExtractedHeader");
+  if (!fExtractedImpulse)
+    {
+      * fLog << err << AddSerialNumber("BExtractedHeader") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+  else std::cout<<"BExtractedHeader found"<<std::endl;
+  
+  fGeomTel = (BGeomTel*)pList->FindObject(AddSerialNumber("BGeomTel"));
+  if (!fGeomTel)
+    {
+      * fLog << err << AddSerialNumber("BGeomTel") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+  
+  return kTRUE;
+}
+
+
+
+Int_t BMyReco::Process()
+{
+  iEvent++;
+  //  std::cout<<"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<WE ARE IN BMyReco::Process"<<std::endl;
+  if (iEvent%1==0) std::cout<<"eventNumber: "<<iEvent<<std::endl;
+
+  int nImpulse=fExtractedImpulse->GetNimpulse();
+  //  std::cout<<"LOOKING AT "<<nImpulse<<" JOINT IMPULSES"<<std::endl;
+
+  std::vector<int> orderT_id=filterHits(200.0);
+ 
+  //  std::vector<int> cluster_id=makePrelimCluster(orderT_id);
+
+  std::vector<int> clusterQual_id;
+
+  int maxSize=0;
+
+  if (orderT_id.size()>1){
+    //loop over possible vertices
+    for (int k=0; k<orderT_id.size()-2; k++){
+      //      std::vector<int> clusterQualBuf_id=makeQualityCluster(orderT_id, k);
+      //create cluster
+      clusterQual_id=makeQualitySSCluster(orderT_id, k);
+      if (clusterQual_id.size()>2){
+	hClusterSize->Fill(clusterQual_id.size(),1);
+	//check if hits are on the same string
+	bool good=true;
+	//  std::cout<<"NEXT EVT"<<std::endl;
+	for (int i=0; i<clusterQual_id.size(); i++){
+	  int chanID=fExtractedImpulse->GetNch(clusterQual_id[i]);
+	  int stringNum;
+	  if (i==0) stringNum=floor(chanID/24);
+	  if (stringNum!=floor(chanID/24)) good=false;
+	  hSecNumQual->Fill(floor(chanID/24),1);
+	  //    std::cout<<floor(chanID/48)<<std::endl;
+	}
+	if (good&&clusterQual_id.size()>8) {
+	  hClusterSizeSS->Fill(clusterQual_id.size(),1);
+	  std::vector<float> vec=getDirection(clusterQual_id[0], clusterQual_id[2]);
+	  hDirection->Fill(fabs(vec[2])*pow(vec[2],-1),1);
+
+	  //check dT
+	  for (int p=1; p<clusterQual_id.size(); p++){
+	    float deltaT=getDeltaT_ns(clusterQual_id[p-1], clusterQual_id[p]);
+	    float deltaR=getDeltaR_m(clusterQual_id[p-1], clusterQual_id[p]);
+
+	    hDeltaTvert->Fill(deltaT,1);
+	    hDeltaTvertNorm->Fill((clight*deltaT*1e-9)/deltaR,1);
+	  }
+
+	  //check the LL
+	  //initial point vector A
+	  std::vector<float> A;
+	  //direction vector s
+	  std::vector<float> s;
+	  //M1
+	  std::vector<float> M1=getHitLocation(clusterQual_id[0]);
+	  //M2
+	  std::vector<float> M2=getHitLocation(clusterQual_id[1]);
+	  //M3
+	  std::vector<float> M3=getHitLocation(clusterQual_id[2]);
+
+	  //construct A
+	  A.push_back(M1[0]-(M3[0]-M1[0]));
+	  A.push_back(M1[1]-(M3[1]-M1[1]));
+	  A.push_back(M1[2]-(M3[2]-M1[2]));
+	  
+	  //construct direction
+	  s.push_back(M3[0]-M1[0]);
+	  s.push_back(M3[1]-M1[1]);
+	  s.push_back(M3[2]-M1[2]);
+
+	  //calculate T_i for a given trajectory
+	  //test: get time for M2:
+	  //float T2 = getTimeEstimate(A,s,M2);
+	  
+	  float L=getLvalue(clusterQual_id, A, s);
+	  
+	  hLLvert->Fill(-log10(L),1);
+
+	  //    std::cout<<"NEXT EVENT , propagation to M2: "<<T2<<"    likelyhood: "<<L<<std::endl;
+	}
+      }
+      else continue;
+    }
+  }
+  else return kTRUE;
+  
+  return kTRUE;
+}
+
+Int_t BMyReco::PostProcess()
+{
+  std::cout<<"WE ARE IN BMyReco::PostProcess"<<std::endl;
+  fOUT->cd();
+  hCharge->Write();
+  hMapOfHits->Write();
+  hPairwiseSpeed->Write();
+  hDR->Write();
+  hDT->Write();
+  hNPairs->Write();
+  hClusterSize->Write();
+  hClusterSizeSS->Write();
+  hSecNum->Write();
+  hSecNumQual->Write();
+  hDirection->Write();
+  hLLvert->Write();
+  hDeltaTvert->Write();
+  hDeltaTvertNorm->Write();
+  hDeltaT_DEBUG->Write();
+  hDeltaTNorm_DEBUG->Write();
+  hLOverEst->Write();
+  hLOverEstNoFac->Write();
+  hUsedHitFrac->Write();
+  hNTracksVsCut->Write();
+  pLLvertVsCut->Write();
+  h_LL3_nHits->Write();
+  h_LL4_nHits->Write();
+  h_LL5_nHits->Write();
+  return kTRUE;
+}
+
+std::vector<float> BMyReco::getHitLocation(int hitID)
+{
+  int chanID=fExtractedImpulse->GetNch(hitID);
+  std::vector<float> point;
+  point.push_back((fGeomTel->At(chanID))->GetX());
+  point.push_back((fGeomTel->At(chanID))->GetY());
+  point.push_back((fGeomTel->At(chanID))->GetZ());
+  return point;
+}
+
+float BMyReco::getDeltaT_ns(int hit1_id, int hit2_id)
+{
+  float deltaT;
+  deltaT=5*(fExtractedImpulse->GetT(hit2_id)-fExtractedImpulse->GetT(hit1_id)); //one unit is 5ns
+  return deltaT;
+}
+
+float BMyReco::getDeltaR_m(int hit1_id, int hit2_id)
+{
+  std::vector<float> Hit1=getHitLocation(hit1_id);
+  
+  std::vector<float> Hit2=getHitLocation(hit2_id);
+  
+  float deltaR=sqrt(pow(Hit1[0]-Hit2[0],2)+pow(Hit1[1]-Hit2[1],2)+pow(Hit1[2]-Hit2[2],2));
+  
+  return deltaR;
+}
+
+std::vector<float> BMyReco::getDirection(int hit1_id, int hit2_id)
+{
+  std::vector <float> sec=getHitLocation(hit2_id);
+  
+  //previous hit on cluster
+  std::vector<float> first=getHitLocation(hit1_id);
+  //      dRprev=sqrt(pow(prevHit[0]-test[0],2)+pow(prevHit[1]-test[1],2)+pow(prevHit[2]-test[2],2));
+  
+  //direction from previous hit
+  std::vector<float> dir;
+  dir.push_back(sec[0]-first[0]);
+  dir.push_back(sec[1]-first[1]);
+  dir.push_back(sec[2]-first[2]);
+
+  return dir;
+}
+
+//return time of propagation from arbitrary point A on trajectory to coordinates M
+float BMyReco::getTimeEstimate_ns(std::vector<float> A, std::vector<float> s, std::vector<float> M)
+{
+  std::vector<float> AM;
+  AM.push_back(M[0]-A[0]);
+  AM.push_back(M[1]-A[1]);
+  AM.push_back(M[2]-A[2]);
+  float modAM=sqrt(pow(AM[0],2)+pow(AM[1],2)+pow(AM[2],2));
+  float modS=sqrt(pow(s[0],2)+pow(s[1],2)+pow(s[2],2));
+  //  std::cout<<"AM: "<<modAM<<"  s: "<<modS<<std::endl;
+
+  float cosAlpha=(AM[0]*s[0]+AM[1]*s[1]+AM[2]*s[2])/(modAM*modS);
+  cosAlpha=round(cosAlpha*10000)*pow(10000,-1); //rounding to avoid nan in the next line
+  float sinAlpha=sqrt(1-pow(cosAlpha,2)); 
+
+  //  std::cout<<"cos, sin: "<<cosAlpha<<"   "<<sinAlpha<<std::endl;
+
+  float dist=modAM*(cosAlpha - 2.47*sinAlpha);
+  
+  //  std::cout<<"dist:  "<<dist<<std::endl;
+
+  float time=1e9*dist/(clight);
+    
+  return time;
+}
+
+//filter hits based on amplitude
+//order them in time
+std::vector<int> BMyReco::filterHits(float minAmpl)
+{
+  int impulse_n=fExtractedImpulse->GetNimpulse();
+  std::vector<int> selectByAmpl_id; 
+  for (int j=0; j< impulse_n; j++){
+    //118 and 119 are noisy. Take hits with integrated charge > 200
+    //fill simple histograms
+    hCharge->Fill(fExtractedImpulse->GetQ(j),1);
+    int nch=fExtractedImpulse->GetNch(j);
+    if (fExtractedImpulse->GetQ(j)>100) hMapOfHits->Fill(floor(nch/24),fGeomTel->At(nch)->GetZ(),1);
+							 //(fGeomTel->At(chanID))->GetZ()
+    if (fExtractedImpulse->GetNch(j)!=118&&fExtractedImpulse->GetNch(j)!=119&&fExtractedImpulse->GetQ(j)>minAmpl) selectByAmpl_id.push_back(j); 
+  }
+
+  std::vector<int> orderT_id;
+  orderT_id.resize(selectByAmpl_id.size());
+
+  for (Int_t j = 0; j < selectByAmpl_id.size(); j++){
+    hSecNum->Fill(floor(fExtractedImpulse->GetNch(selectByAmpl_id[j])/24),1);
+    int nBefore=0;
+    for (int k=0; k<selectByAmpl_id.size(); k++) {
+      if (fExtractedImpulse->GetT(selectByAmpl_id[j])>fExtractedImpulse->GetT(selectByAmpl_id[k])) nBefore++;
+    }
+    orderT_id[nBefore]=selectByAmpl_id[j];
+  }
+  return orderT_id;
+}
+
+//create quality cluster with first hit in time vtx_id, check direction of hits, all pairs should have propagation time < s/c*1.3
+std::vector<int> BMyReco::makeQualityCluster(std::vector<int> cluster_id, int vtx_id)
+{
+  //check direction of hits from given vertex, selected from preliminary cluster vector
+  //ensure that all pairs satisfy the timing cut
+
+  //preliminary quality cluster
+  std::vector<int> clusterPreQual_id;
+  //final quality cluster
+  std::vector<int> clusterQual_id;
+  clusterQual_id.resize(0);
+  
+  if (cluster_id.size()>2) {
+    
+    clusterPreQual_id.push_back(cluster_id[vtx_id]);
+    
+    int nTaken=0;
+    std::vector<float> dirPrev;
+    
+    for (int k=vtx_id+1; k<cluster_id.size(); k++){
+           
+      //tested hit cluster_id[k]
+      
+      //previous hit on cluster clusterPreQual_id[nTaken])
+
+      //direction from previous hit
+      std::vector<float> dir = getDirection(clusterPreQual_id[nTaken], cluster_id[k]);
+      float dir_abs=sqrt(pow(dir[0],2)+pow(dir[1],2)+pow(dir[2],2));
+           
+      //if there are already two hits in the cluster check if the new hit is in the same direction
+      //cos of angle between directions [N-2 to N-1] and [N-1 to N]
+      float cos=1;
+      if (nTaken>0) {
+
+	float dirPrev_abs=sqrt(pow(dirPrev[0],2)+pow(dirPrev[1],2)+pow(dirPrev[2],2));
+	cos=(dir[0]*dirPrev[0]+dir[1]*dirPrev[1]+dir[2]*dirPrev[2])/(dir_abs*dirPrev_abs);
+
+	//	std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<modDir<<"   modDirPrev: "<<modDirPrev<<"   cos: "<<cos<<std::endl;
+      }
+      
+      //std::cout<<"chanID_vtx: "<<fExtractedImpulse->GetNch(cluster_id[vtx_id])<<"   chanID_test: "<<fExtractedImpulse->GetNch(cluster_id[k])<<"   modDir: "<<dir_abs<<"   dRprev: "<<dir_abs<<"   cos: "<<cos<<std::endl;
+
+      //if distance [N-1 to N] > 0 and angle < ~100deg take the hit
+      if (dir_abs>0&&cos>=-0.1) {
+	nTaken++;
+	//std::cout<<"take into cluster"<<std::endl;
+	clusterPreQual_id.push_back(cluster_id[k]);
+	dirPrev=dir;
+      }
+      
+    }
+
+    //check if all pairwise combinations within the cluster satisfy timing cut
+    std::vector<bool> isBad;  //vector channels which do not pass the cut
+    isBad.resize(clusterPreQual_id.size());
+    for (int k=0; k<isBad.size(); k++){
+      isBad[k]=true;
+    }
+    
+    if (clusterPreQual_id.size()>2){
+      for (int k=0; k<clusterPreQual_id.size(); k++){
+	for (int p=k+1; p<clusterPreQual_id.size(); p++){
+
+	  float dR=getDeltaR_m(clusterPreQual_id[k], clusterPreQual_id[p]);
+	  float dT=getDeltaT_ns(clusterPreQual_id[k], clusterPreQual_id[p]);
+	  hPairwiseSpeed->Fill(fabs((clight*dT*1e-9)/dR),1);
+	  if (clight*dT*1e-9/dR<1.3) isBad[p]=false; 
+	}
+      }
+    }
+    
+    //final quality cluster
+    clusterQual_id.push_back(clusterPreQual_id[0]);  //push vertex
+    for (int k=1; k<clusterPreQual_id.size(); k++){
+      if (!isBad[k]) clusterQual_id.push_back(clusterPreQual_id[k]);
+    }
+    
+    if (clusterQual_id.size()<3) clusterQual_id.resize(0);
+
+    
+    
+  }
+  
+  /*
+  std::cout<<"clusterQual size: "<<clusterQual_id.size()<<";   content: ";
+  for (int j=0; j<clusterQual_id.size(); j++){
+    std::cout<<fExtractedImpulse->GetNch(clusterQual_id[j])<<" ";
+  }
+  std::cout<<std::endl;
+  //  std::cout<<"bloblo  "<<clusterQual_id.size()<<std::endl;
+  */
+  return clusterQual_id;
+}
+
+
+//quality cluster for the same string
+//create quality cluster with first hit in time vtx_id, check direction of hits, all pairs should have propagation time < s/c
+
+std::vector<int> BMyReco::makeQualitySSCluster(std::vector<int> cluster_id, int vtx_id)
+{
+  //check direction of hits from given vertex, selected from preliminary cluster vector
+  //ensure that all pairs satisfy the timing cut
+
+  //preliminary quality cluster
+  std::vector<int> clusterPreQual_id;
+  //final quality cluster
+  std::vector<int> clusterQual_id;
+  clusterQual_id.resize(0);
+  
+  if (cluster_id.size()>2) {
+    
+    clusterPreQual_id.push_back(cluster_id[vtx_id]);
+    int stringID=floor(fExtractedImpulse->GetNch(cluster_id[vtx_id])/24);
+    
+    int nTaken=0;
+    std::vector<float> dirPrev;
+    
+    for (int k=vtx_id+1; k<cluster_id.size(); k++){
+           
+      //consider hits only from the same string as vertex
+      
+      if (floor(fExtractedImpulse->GetNch(cluster_id[k])/24)!=stringID) continue;
+
+      //tested hit cluster_id[k]
+      
+      //previous hit on cluster clusterPreQual_id[nTaken])
+
+      //direction from previous hit
+      std::vector<float> dir = getDirection(clusterPreQual_id[nTaken], cluster_id[k]);
+      float dir_abs=sqrt(pow(dir[0],2)+pow(dir[1],2)+pow(dir[2],2));
+           
+      //if there are already two hits in the cluster check if the new hit is in the same direction
+      //cos of angle between directions [N-2 to N-1] and [N-1 to N]
+      float cos=1;
+      if (nTaken>0) {
+
+	float dirPrev_abs=sqrt(pow(dirPrev[0],2)+pow(dirPrev[1],2)+pow(dirPrev[2],2));
+	cos=(dir[0]*dirPrev[0]+dir[1]*dirPrev[1]+dir[2]*dirPrev[2])/(dir_abs*dirPrev_abs);
+
+	//	std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<modDir<<"   modDirPrev: "<<modDirPrev<<"   cos: "<<cos<<std::endl;
+      }
+      //std::cout<<"chanID_vtx: "<<fExtractedImpulse->GetNch(cluster_id[vtx_id])<<"   chanID_test: "<<fExtractedImpulse->GetNch(cluster_id[k])<<"   dir_abs: "<<dir_abs<<"   cos: "<<cos<<std::endl;
+      //      std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<dir_abs<<"   dRprev: "<<dRprev<<"   cos: "<<cos<<std::endl;
+
+      //if distance [N-1 to N] > 0 and angle < ~100deg take the hit
+      if (dir_abs>0&&cos>=-0.1) {
+	nTaken++;
+	//std::cout<<"take into cluster"<<std::endl;
+	clusterPreQual_id.push_back(cluster_id[k]);
+	dirPrev=dir;
+      }
+      
+    }
+
+    //check if all pairwise combinations within the preliminary cluster satisfy timing cut
+    
+    std::vector<bool> isGood; //vector of good flags
+    isGood.resize(clusterPreQual_id.size());
+    for (int k=0; k<isGood.size(); k++){
+      isGood[k]=true;
+    }
+    
+    if (clusterPreQual_id.size()>2){
+      for (int k=0; k<clusterPreQual_id.size(); k++){
+	for (int p=k+1; p<clusterPreQual_id.size(); p++){
+
+	  float dR=getDeltaR_m(clusterPreQual_id[k], clusterPreQual_id[p]);
+	  float dT=getDeltaT_ns(clusterPreQual_id[k], clusterPreQual_id[p]);
+
+	  if (clight*dT*1e-9/dR>1.3) isGood[p]=false; 
+	}
+      }
+    }
+    
+    //fill final quality cluster
+    clusterQual_id.push_back(clusterPreQual_id[0]);
+    for (int k=1; k<clusterPreQual_id.size(); k++){
+      if (isGood[k]) clusterQual_id.push_back(clusterPreQual_id[k]);
+    }
+    
+    if (clusterQual_id.size()<3) clusterQual_id.resize(0);
+   
+    //check dT DEBUG
+    for (int p=1; p<clusterQual_id.size(); p++){
+      float deltaT=getDeltaT_ns(clusterQual_id[p-1], clusterQual_id[p]);
+      float deltaR=getDeltaR_m(clusterQual_id[p-1], clusterQual_id[p]);
+      
+      hDeltaT_DEBUG->Fill(deltaT,1);
+      hDeltaTNorm_DEBUG->Fill((clight*deltaT*1e-9)/deltaR,1);
+    }
+    
+ 
+  }
+  
+  /*  
+  std::cout<<"clusterQual size: "<<clusterQual_id.size()<<";   content: ";
+  for (int j=0; j<clusterQual_id.size(); j++){
+    std::cout<<fExtractedImpulse->GetNch(clusterQual_id[j])<<" ";
+  }
+  std::cout<<std::endl;
+  //  std::cout<<"bloblo  "<<clusterQual_id.size()<<std::endl;
+  */
+
+  return clusterQual_id;
+}
+
+//maximization of LL
+//likelyhood* P(x1, y1, z1, x2, y2, z2, T1, T2)*P(x2, y2, z2, x3, y3, z3, T2, T3)*P(...)...
+//Ti is computed propagation time
+//P is gaussian with ~resolution width or any other function peaked at measured time
+
+//function to calculate likelyhood value 
+//takes geometry, array of impulses, vector of hit id, zero point and direction of trajectory
+
+float BMyReco::getLvalue(std::vector<int> clusterQual_id, std::vector<float> zero, std::vector<float> direction)
+{
+  //array of time of impulse arrival as calculated from given trajectory 
+  std::vector<float> timeEstimate;
+  //array of time of impulse arrival as measured
+  std::vector<float> timeMeasured;  
+  //calculate time of propagation to each channel
+  for (int i=0; i<clusterQual_id.size(); i++){
+    //get location of hit:
+    std::vector<float> M = getHitLocation(clusterQual_id[i]);
+    //fill time vectors
+    timeEstimate.push_back(getTimeEstimate_ns(zero, direction, M));
+    timeMeasured.push_back(5*fExtractedImpulse->GetT(clusterQual_id[i]));
+  }
+  
+  //return value
+  float L=1;
+  float L3=1;
+  float L4=1;
+  float L5=1;
+  int nUsedHits=0;
+  
+  float sigma=10;
+  //define "resolution function"
+  //  for (int j=0; j<1000; j++){
+    float fcut=300;
+    //*sigma;
+    nUsedHits=0;
+    L=1;
+    L3=1;
+    L4=1;
+    L5=1;
+    for (int i=1; i<clusterQual_id.size(); i++) {
+      float mean=4*2*(timeMeasured[i]-timeMeasured[i-1]);  //4 is empiric factor 
+      float meanNoFac=(timeMeasured[i]-timeMeasured[i-1]);  //5ns is integration window
+      float estimate=(timeEstimate[i]-timeEstimate[i-1]);
+      
+      hLOverEst->Fill((estimate-mean)*pow(sigma,-1),1);
+      hLOverEstNoFac->Fill((estimate-meanNoFac)*pow(sigma,-1),1);
+      
+      if (fabs(estimate-meanNoFac)>fcut) continue;
+      else nUsedHits++;
+      //    std::cout<<"mean: "<<meanNoFac<<"   estimate: "<<estimate<<std::endl;   
+      float P=pow(sqrt(2*TMath::Pi())*sigma,-1)*exp(-pow(estimate-meanNoFac,2)/(2*pow(sigma,2)));
+      //    std::cout<<"probability: "<<P<<"    components: "<<pow(sqrt(2*TMath::Pi())*sigma,-1)<<"    "<<pow(estimate-meanNoFac,2)<<"   "<<-pow(estimate-meanNoFac,2)/(2*pow(sigma,2))<<"   "<<exp(-pow(estimate-meanNoFac,2)/(2*pow(sigma,2)))<<std::endl;   
+      L=L*P;
+      if (nUsedHits<=2) L3=L;
+      if (nUsedHits<=4) L4=L;
+      if (nUsedHits<=5) L5=L;
+    }
+    
+    hUsedHitFrac->Fill(nUsedHits*pow(clusterQual_id.size(),-1),1);
+    
+    h_LL3_nHits->Fill(nUsedHits,-log10(L)*pow(nUsedHits,-1),1);
+      //    if (nUsedHits>=6) h_LL3_nHits->Fill(nUsedHits,-log10(L3),1);
+      //    if (nUsedHits>=6) h_LL4_nHits->Fill(nUsedHits,-log10(L4),1);
+      //   if (nUsedHits>=6) h_LL5_nHits->Fill(nUsedHits,-log10(L5),1);
+
+    //    if (nUsedHits>6) std::cout<<"cut: "<<fcut<<"   hits used in LL: "<<nUsedHits<<"  L: "<<L3<<std::endl;
+
+    
+    if (nUsedHits>=5) {
+      hNTracksVsCut->Fill(fcut,1);
+      pLLvertVsCut->Fill(fcut,-log10(L5));
+      //std::cout<<"cut: "<<j*sigma<<"   hits used in LL: "<<nUsedHits<<"  L: "<<L<<std::endl;
+      //	return L;
+    }
+    
+    //    else return 1;
+    //  }
+  return 1;
+}

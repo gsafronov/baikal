@@ -1,0 +1,1088 @@
+#include "BMyRecoBEvt.h"
+#include "BGeomTel.h"
+#include "BEvent.h"
+#include "BMCEvent.h"
+#include "BExtractedImpulse.h"
+#include "BExtractedImpulseTel.h"
+#include "BJoinExtractedImpulseTel.h"
+#include "BEventMask.h"
+#include "BChannelMask.h"
+#include "BExtractedHeader.h"
+
+//#include "BMyRecParam.h"
+
+#include "MParList.h"
+#include "MLog.h"
+#include "MLogManip.h"
+ 
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TProfile.h"
+#include "TFile.h"
+#include "TMath.h"
+
+#include <math.h>
+#include <vector>
+
+ClassImp(BMyRecoBEvt);
+
+BMyRecoBEvt::BMyRecoBEvt(string fname, bool useMCEvent)
+{
+  iEvent=0;
+ 
+  fUseMCEvent=useMCEvent;
+
+  fOUT=new TFile(fname.c_str(),"RECREATE");
+
+  //array of vectors of histograms for calibration
+  /*
+  char tmp[100];
+  for (int iLevel=24; iLevel>0; iLevel--){
+    for (int iString=0; iString<8; iString++){
+      for (int iBelow=iLevel-1; iBelow>0; iBelow--){
+	sprintf(tmp,"dt_%d_%d",iString*24+iLevel, iString*24+iBelow);
+	TH1F hBuf(tmp,tmp,200,-100,100);
+	hDeltaT_pairChan[iLevel].push_back(hBuf);
+      }
+    }
+  }
+  */
+
+  hCharge=new TH1F("hCharge","hCharge",1000,0,1000);
+  hChargeNoLED=new TH1F("hChargeNoLED","hChargeNoLED",1000,0,1000);
+  hChargeOverAmpl=new TH1F("hChargeOverAmpl","hChargeOverAmpl",10000,0,100);
+  hTime=new TH1F("hTime","hTime",1000,0,10000);
+  hTimeOverCharge=new TH1F("hTimeOverCharge","hTimeOverCharge",10000,0,10000);
+  hMapOfHits1pe=new TH2F("hMapOfHits1pe","hMapOfHits1pe",21,-0.5,20.5,25,-0.5,24.5);
+  hMapOfHitsNpe=new TH2F("hMapOfHitsNpe","hMapOfHitsNpe",21,-0.5,20.5,25,-0.5,24.5);
+  hMapOfClusteredHits=new TH2F("hMapOfClusteredHits","hMapOfClusteredHits",21,-0.5,20.5,25,-0.5,24.5);
+  hGeom=new TH2F("hGeom","hGeom",2000,0.5,20.5,10000,0,1000);
+  hPairwiseSpeed=new TH1F("hPairwiseSpeed","hPairwiseSpeed",10000,-1,100);
+  hPairwiseSpeedMu=new TH1F("hPairwiseSpeedMu","hPairwiseSpeedMu",10000,-1,100);
+  hNClusters=new TH1F("hNClusters","hNClusters",100,0,100);
+  hClusterSize=new TH1F("hClusterSize","hClusterSize",100,0,100);
+  hClusterSizeSS=new TH1F("hClusterSizeSS","hClusterSizeSS",100,0,100);
+  hClustersPerHit=new TH1F("hClustersPerHit","hClustersPerHit",20,0,20);
+  hSecNum=new TH1F("hSecNum","hSecNum",20,-0.5,19.5);
+  hSecNumQual=new TH1F("hSecNumQual","hSecNumQual",20,-0.5,19.5);
+  hDirection=new TH1F("hDirection","hDirection",3,-1.5,1.5);
+  hLL_verticalMu=new TH1F("hLL_verticalMu","hLL_verticalMu",100,0,100);
+  hDeltaT_verticalMu=new TH1F("hDeltaT_verticalMu","hDeltaT_verticalMu",2000,-1000,1000);
+  hDeltaT_verticalMu_Norm=new TH1F("hDeltaT_verticalMu_Norm","hDeltaT_verticalMu_Norm",2000,-10,10);
+  hDeltaT_DEBUG=new TH1F("hDeltaT_DEBUG","hDeltaT_DEBUG",2000,-1000,1000);
+  hDeltaTNorm_DEBUG=new TH1F("hDeltaTNorm_DEBUG","hDeltaTNorm_DEBUG",2000,-100,100);
+  hTime_overestimation=new TH1F("hTime_overestimation","hTime_overestimation",10000,-100,100);
+
+  if (fUseMCEvent){
+    hThetaPrimary=new TH1F("hThetaPrimary","hThetaPrimary",1000,0,1000);
+    hMuonDelay=new TH1F("hMuonDelay","hMuonDelay",1000,0,1000);
+    //    hNHits_ThetaPrimary=new TH2F("hNHits_ThetaPrimary","hNHits_ThetaPrimary",100,0,100,100,0,100);
+    hNHits_EnergyPrimary=new TH2F("hNHits_EnergyPrimary","hNHits_EnergyPrimary",1000,0,100000,100,0,100);
+    
+    hNHits_NRespMuon=new TH2F("hNHits_NRespMuon","hNHits_NRespMuon",100,0,100,100,0,100);
+    
+    hNClusters_EnergyPrimary=new TH2F("hNClusters_EnergyPrimary","hNClusters_EnergyPrimary",1000,0,100000,100,0,100);
+
+    hNClusters_NRespMuon=new TH2F("hNClusters_NRespMuon","hNClusters_NRespMuon",100,0,100,100,0,100);
+  
+    //PLOT RESPONSE MATRIX!!!
+    //NClusters - detector level
+    //NMuons - generator level
+    hClustersRespMatrix=new TH2F("hClustersRespMatrix","hClustersRespMatrix",100,0,100,100,0,100);
+    hNRespMuons=new TH1F("hNRespMuons","hNRespMuons",100,0,100);
+    hNRespMuonsBelow=new TH1F("hNRespMuonsBelow","hNRespMuonsBelow",100,0,100);
+
+    hNMuonsTot=new TH1F("hNMuonsTot","hNMuonsTot",100,0,100);
+
+    hNRespMuons_vertical=new TH1F("hNRespMuonVertical","hNRespMuons_vertical",100,0,100);
+    hNMuonsTot_vertical=new TH1F("hNMuonsTot_vertical","hNMuonsTot_vertical",100,0,100);
+    
+    hSumPolarAngle=new TH1F("hSumPolarAngle","hSumPolarAngle",1000,-3.24,3.24);
+    hAngleRes=new TH1F("hAngleRes","hAngleRes",1000,0,180);
+    hDirDebug=new TH1F("hDirDebug","hDirDebug",1000,-3.14,3.14);
+  
+    hPolarVertical=new TH1F("hPolarVertical","hPolarVertical",110,0,110);
+    hPolarAll=new TH1F("hPolarAll","hPolarAll",110,0,110);
+    
+    hDeltaT_verticalMuGen=new TH1F("hDeltaT_verticalMuGen","hDeltaT_verticalMuGen",1000,0,100);
+    hDeltaT_verticalMuDelta=new TH1F("hDeltaT_verticalMuDelta","hDeltaT_verticalMuDelta",1000,0,100);
+    hDeltaZ_vert=new TH1F("hDeltaZ_vert","hDeltaZ_vert",1000,0,100);
+    
+    hModMH_NRespMuons=new TH2F("hModMH_NRespMuons","hModMH_NRespMuons",100,0,100,100,0,100);
+    hNPulsePerChannel=new TH1F("hNPulsePerChannel","hNPUlsePerChannel",10,0,10);
+    //    hPairwiseSpeedGen=new TH1F("hPairwiseSpeedGen","hPairwiseSpeedGen",10000,-1,100);
+  }
+
+  cWater=3e8*pow(1.33,-1);
+  cVacuum=3e8;
+
+  iLastBins=0;
+}
+
+BMyRecoBEvt::~BMyRecoBEvt()
+{
+}
+
+Int_t BMyRecoBEvt::PreProcess(MParList * pList)
+{
+  std::cout<<"WE ARE IN BMyRecoBEvt::PreProcess"<<std::endl;
+  
+  if (fUseMCEvent) {
+    fMCEvent=(BMCEvent*)pList->FindObject("BMCEvent","BMCEvent");
+    if (!fMCEvent){
+      * fLog << err << AddSerialNumber("BMCEvent") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+  }
+
+
+  fGeomTel = (BGeomTel*)pList->FindObject(AddSerialNumber("BGeomTel"));
+  if (!fGeomTel){
+    * fLog << err << AddSerialNumber("BGeomTel") << " not found... aborting." << endl;
+    return kFALSE;
+  }
+
+  
+  for (int i=0; i<192; i++){
+    std::cout<<"iChan: "<<i<<"   X: "<<fGeomTel->At(i)->GetX()<<"   Y: "<<fGeomTel->At(i)->GetY()<<"   Z: "<<fGeomTel->At(i)->GetZ()<<std::endl;
+  }
+  
+  
+  fEvent=(BEvent*)pList->FindObject("BEvent","BEvent");
+  if (!fEvent){
+    * fLog << err << AddSerialNumber("BEvent") << " not found... aborting." << endl;
+    return kFALSE;
+  }
+  
+  return kTRUE;
+}
+
+
+
+Int_t BMyRecoBEvt::Process()
+{
+  iEvent++;
+  //  std::cout<<"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<WE ARE IN BMyRecoBEvt::Process"<<std::endl;
+  if (iEvent%10000==0) std::cout<<"eventNumber: "<<iEvent<<std::endl;
+  //if (iEvent>37800) std::cout<<"eventNumber: "<<iEvent<<std::endl;
+
+  int nImpulse=fEvent->GetTotImpulses();
+  int nClusters=0;
+
+  //  std::cout<<"LOOKING AT "<<nImpulse<<" JOINT IMPULSES"<<std::endl;
+
+  std::vector<int> orderT_id=filterHits(1.5);
+ 
+  //if (fUseMCEvent) int k=PlotClusters(orderT_id);
+
+  //  std::vector<int> cluster_id=makePrelimCluster(orderT_id);
+
+  std::vector<int> clusterQual_id;
+
+  int maxSize=0;
+
+  int nEvtZeroMu=0;
+  /*
+  if (fUseMCEvent){
+    if (fMCEvent->GetResponseMuonsN()==1) {
+      //std::cout<<"total muons: "<<fMCEvent->GetMuonsN()<<"   response muons: "<<fMCEvent->GetResponseMuonsN()<<std::endl;
+      if (fMCEvent->GetTrack(0)->GetMuonEnergy()<500) return 1;
+    }
+    else return 1;
+  }
+  */
+  if (orderT_id.size()>2){
+    //function to study clusters
+    //if (fUseMCEvent) int k=PlotClusters(orderT_id);
+    //loop over possible vertices
+    TH1F hBufClustersPerHit("hBufCluPerHit","hBufCluPerHit",orderT_id.size(),0,orderT_id.size());
+    for (int iVertex=0; iVertex<orderT_id.size()-2; iVertex++){
+      
+      //create cluster
+      clusterQual_id=makeQualityCluster(orderT_id, iVertex);
+      hClusterSize->Fill(clusterQual_id.size(),1);
+      if (clusterQual_id.size()>2){
+	//hClusterSize->Fill(clusterQual_id.size(),1);
+	//check if hits are on the same string
+	bool isSameString=true;
+	int stringNum=0;
+	//std::cout<<"NEXT EVT"<<std::endl;
+	for (int i=0; i<clusterQual_id.size(); i++){
+	  int chanID=fEvent->GetImpulse(clusterQual_id[i])->GetChannelID();
+	  if (i==0) stringNum=floor(chanID/24);
+	  if (stringNum!=floor(chanID/24)) isSameString=false;
+	  hSecNumQual->Fill(floor(chanID/24),1);
+	  //    std::cout<<floor(chanID/48)<<std::endl;
+	}
+	
+	if (clusterQual_id.size()>2) {
+	  //nClusters++;
+	  for (int iH=0; iH<clusterQual_id.size(); iH++) {
+	    hBufClustersPerHit.Fill(clusterQual_id[iH],1);
+	    int nch=fEvent->GetImpulse(clusterQual_id[iH])->GetChannelID();
+	    //	    std::cout<<"nch:   "<<nch<<std::endl;
+	    //hMapOfClusteredHits->Fill(floor((nch)/24),(nch)%24+1,1);
+	    if (iH<clusterQual_id.size()-1){
+	      float dR=getDeltaR_m(clusterQual_id[iH], clusterQual_id[iH+1]);
+	      float dT=getDeltaT_ns(clusterQual_id[iH], clusterQual_id[iH+1]);
+	      hPairwiseSpeed->Fill(fabs((cVacuum*dT*1e-9)/dR),1);
+	    }
+	  }
+	}
+	
+	
+	//	if (isSameString) std::cout<<"is same string"<<std::endl;
+	if (isSameString&&clusterQual_id.size()>4) {
+	  
+	  //STUDY MULTIPLICITY OF HITS
+	  nClusters++;
+	  
+	  for (int iH=0; iH<clusterQual_id.size(); iH++) {
+	    int nch=fEvent->GetImpulse(clusterQual_id[iH])->GetChannelID();
+	    hMapOfClusteredHits->Fill(floor((nch)/24),(nch)%24+1,1);
+	  }	    
+
+	  int chanZero=fEvent->GetImpulse(clusterQual_id[0])->GetChannelID();
+	  int stringID=fGeomTel->GetStringNum(chanZero);
+	  // if (stringID==3||stringID==5||stringID==7) continue;
+	  //std::cout<<stringID<<"    "<<floor((chanZero)/24)<<std::endl;
+	  
+	    
+	  //std::cout<<"found cluster > 5 hits"<<std::endl;
+	  hClusterSizeSS->Fill(clusterQual_id.size(),1);
+	  std::vector<float> vec=getDirection(clusterQual_id[0], clusterQual_id[2]);
+	  hDirection->Fill(fabs(vec[2])*pow(vec[2],-1),1);
+
+	  if (fUseMCEvent){
+	    hModMH_NRespMuons->Fill(fMCEvent->GetResponseMuonsN(),1,1); //nModManyHits
+	    
+	    hPolarVertical->Fill(180-fMCEvent->GetPrimaryParticlePolar(),1);
+
+	    //FINISH CODE HERE FOR GEN-LEVEL DELTA TIME DISTRIBUTION
+	    std::vector<float> dir=GetPrimaryDirection();
+	    std::vector<float> dirVert;
+	    dirVert.push_back(0);
+	    dirVert.push_back(0);
+	    dirVert.push_back(-1);
+	    for (int iMu=0; iMu<fMCEvent->GetResponseMuonsN(); iMu++){
+	      //	      if (fMCEvent->GetTrack(iMu)->GetMuonEnergy()<500) continue;
+	      std::vector<float> P0;
+	      P0.push_back(fMCEvent->GetTrack(iMu)->GetX());
+	      P0.push_back(fMCEvent->GetTrack(iMu)->GetY());
+	      P0.push_back(fMCEvent->GetTrack(iMu)->GetZ());
+	      
+	      std::vector<float> PZero;
+	      PZero.push_back(P0[0]-dir[0]*10000);
+	      PZero.push_back(P0[1]-dir[1]*10000);
+	      PZero.push_back(P0[2]-dir[2]*10000);
+	      //std::cout<<"Z0 of muon track: "<<PZero[2]<<std::endl;
+
+	      std::vector<float> PZ;
+	      PZ.push_back(45);
+	      PZ.push_back(5);
+	      PZ.push_back(100000);
+
+	      //find nearest string:
+	      float dxyMin=1000000;
+	      int closestStringID=-1;
+	      for (int iString=0; iString<8; iString++){
+		int iChan=iString*24 + 5;
+		if (iChan>192) continue;
+		float chX=fGeomTel->At(iChan)->GetX();
+		float chY=fGeomTel->At(iChan)->GetY();
+		float dxyToP0=sqrt(pow(chX-P0[0],2)+pow(chY-P0[1],2));
+		if (dxyToP0<dxyMin) {
+		  dxyMin=dxyToP0;
+		  closestStringID=iString;
+		}
+	      }
+	      float tim0=0;
+	      float timV0=0;
+	      for (int iModule=0; iModule<24; iModule++){
+		int chanID=closestStringID*24+iModule;
+		//int chanID=1*24+iModule;
+		std::vector<float> point;
+		point.push_back((fGeomTel->At(chanID))->GetX());
+		point.push_back((fGeomTel->At(chanID))->GetY());
+		point.push_back((fGeomTel->At(chanID))->GetZ());
+		float tim=getTimeEstimate_ns(PZero, dir, point);
+		float timV=getTimeEstimate_ns(PZ, dirVert, point);
+		if (iModule>1) {
+		  hDeltaT_verticalMuGen->Fill(-(tim-tim0),1);
+		  hDeltaT_verticalMuDelta->Fill(-(timV-timV0),1);
+		  //std::cout<<tim<<"   "<<tim0<<"   "<<tim-tim0<<std::endl;
+		}
+		tim0=tim;
+		timV0=timV;
+	      }
+	      //float tim0=getTimeEstimation_ns()
+	      
+	    }
+	  }
+
+
+	  //check dT
+	  for (int p=1; p<clusterQual_id.size(); p++){
+	    float deltaT=getDeltaT_ns(clusterQual_id[p-1], clusterQual_id[p]);
+	    float deltaR=getDeltaR_m(clusterQual_id[p-1], clusterQual_id[p]);
+	    //std::cout<<"deltaT: "<<deltaT<<"   deltaR: "<<deltaR<<std::endl;
+	    hDeltaT_verticalMu->Fill(deltaT,1);
+	    hDeltaT_verticalMu_Norm->Fill((cVacuum*deltaT*1e-9)/deltaR,1);
+	      
+	    if ((cVacuum*deltaT*1e-9)/deltaR>1&&deltaR>50){
+	      int chID0=fEvent->GetImpulse(clusterQual_id[p-1])->GetChannelID();
+	      int chID1=fEvent->GetImpulse(clusterQual_id[p])->GetChannelID();
+	      //	      std::cout<<"ch0: "<<chID0<<"  Z0: "<<fGeomTel->At(chID0)->GetZ()
+	      //		       <<"   ch1: "<<chID1<<"  Z1: "<<fGeomTel->At(chID1)->GetZ()
+	      //		       <<"   deltaR: "<<deltaR<<"   deltaT: "<<deltaT
+	      //		       <<"  expected: "<<(deltaR/cVacuum)*1e9<<"  ratio: "<<(cVacuum*deltaT*1e-9)/deltaR   
+	      //		       <<std::endl;
+	    }
+
+	  }
+
+	  //check the LL
+	  //initial point vector A
+	  std::vector<float> A;
+	  //direction vector s
+	  std::vector<float> s;
+	  //M1
+	  std::vector<float> M1=getHitLocation(clusterQual_id[0]);
+	  //M2
+	  std::vector<float> M2=getHitLocation(clusterQual_id[1]);
+	  //M3
+	  std::vector<float> M3=getHitLocation(clusterQual_id[2]);
+
+	  //construct A
+	  A.push_back(M1[0]-(M3[0]-M1[0]));
+	  A.push_back(M1[1]-(M3[1]-M1[1]));
+	  A.push_back(M1[2]-(M3[2]-M1[2]));
+	  
+	  //construct direction
+	  s.push_back(M3[0]-M1[0]);
+	  s.push_back(M3[1]-M1[1]);
+	  s.push_back(M3[2]-M1[2]);
+
+	  //calculate T_i for a given trajectory
+	  //test: get time for M2:
+	  float T2 = getTimeEstimate_ns(A,s,M2);
+	  //std::cout<<"will calculate Lvalue"<<std::endl;
+	  float L=getLvalue(clusterQual_id, A, s);
+	  
+	  hLL_verticalMu->Fill(-log10(L),1);
+
+	  //std::cout<<"NEXT EVENT , propagation to M2: "<<T2<<"    likelyhood: "<<L<<std::endl;
+	}
+      }
+      else continue;
+      
+      if (fUseMCEvent){
+	if (clusterQual_id.size()>4) PlotClusters(clusterQual_id);
+      }
+    }
+
+    hNClusters->Fill(nClusters,1);
+    if (fUseMCEvent){
+      hPolarAll->Fill(180-fMCEvent->GetPrimaryParticlePolar(),1);
+      //if (nClusters>0) hNRespMuons->Fill(fMCEvent->GetResponseMuonsN(),1);
+      int nMu=0;
+      int nMuBelow=0;
+      for (int iMu=0; iMu<fMCEvent->GetResponseMuonsN(); iMu++){
+	if (fMCEvent->GetTrack(iMu)->GetMuonEnergy()>1000) nMu++;
+	if (fMCEvent->GetTrack(iMu)->GetMuonEnergy()<500) nMuBelow++;
+	hMuonDelay->Fill(fMCEvent->GetTrack(iMu)->GetDelay(),1);
+      }
+      //if (nClusters>0) hNRespMuons->Fill(fMCEvent->GetResponseMuonsN(),1);
+      if (nMu>0) hNRespMuonsBelow->Fill(nMuBelow,1);
+      hNClusters_NRespMuon->Fill(nMu, nClusters, 1);
+      
+      hNHits_EnergyPrimary->Fill(fMCEvent->GetSumEnergyBundleSurf(), fMCEvent->GetChannelN(), 1);
+      hNHits_NRespMuon->Fill(nMu, fMCEvent->GetChannelN(), 1);
+   
+      //pairwise time only for pulses from muons
+      //check muons close to vertical
+      if (180-fMCEvent->GetPrimaryParticlePolar()<180){
+	std::vector<float> pulseTimes;
+	std::vector<int> pulseChan;
+	int nChannels=fMCEvent->GetChannelN();
+	for (int iChan=0; iChan<nChannels; iChan++){
+	  int nPulse=fMCEvent->GetHitChannel(iChan)->GetPulseN();
+	  BMCHitChannel* chan=fMCEvent->GetHitChannel(iChan);
+	  hNPulsePerChannel->Fill(nPulse,1);
+	  for (int iPul=0; iPul<nPulse; iPul++){
+	    // std::cout<<"channel: "<<chan->GetChannelID()<<"  pulse: "<<iPul<<"  magic: "<<chan->GetPulse(iPul)->GetMagic()<<"  time: "<<chan->GetPulse(iPul)->GetTime()<<"   ampl: "<<chan->GetPulse(iPul)->GetAmplitude()<<std::endl;
+	    if (chan->GetChannelID()<192){
+	      if ((chan->GetPulse(iPul)->GetMagic()==-999)/*||chan->GetPulse(iPul)->GetMagic()%1000==1)*/&&chan->GetPulse(iPul)->GetAmplitude()>2&&chan->GetPulse(iPul)->GetMagic()!=1) {
+		pulseTimes.push_back(chan->GetPulse(iPul)->GetTime());
+		pulseChan.push_back(chan->GetChannelID());
+	      }
+	    }
+	  }	
+	}
+	//std::cout<<"aa"<<std::endl;
+	
+	for (int it=0; it<pulseTimes.size(); it++){
+	  if (it==pulseTimes.size()-1) break;
+	  for (int it1=it+1; it1<pulseTimes.size(); it1++){
+	    float deltaT=fabs(pulseTimes[it]-pulseTimes[it1]);
+	    float deltaR=sqrt(pow(fGeomTel->At(pulseChan[it])->GetX()-fGeomTel->At(pulseChan[it1])->GetX(),2)+
+			      pow(fGeomTel->At(pulseChan[it])->GetY()-fGeomTel->At(pulseChan[it1])->GetY(),2)+
+			      pow(fGeomTel->At(pulseChan[it])->GetZ()-fGeomTel->At(pulseChan[it1])->GetZ(),2));
+	    //if (deltaR>0) hPairwiseSpeedMu->Fill(cVacuum*deltaT*1e-9/deltaR,1);
+	    //std::cout<<"it: "<<it<<"   it1: "<<it1<<std::endl;
+	  }
+	}
+      }
+      
+    }
+    
+    for (int iB=0; iB<hBufClustersPerHit.GetNbinsX(); iB++)
+      hClustersPerHit->Fill(hBufClustersPerHit.GetBinContent(iB+1),1);
+    hBufClustersPerHit.Reset();
+  
+        
+  }
+
+  if (fUseMCEvent){
+    hNMuonsTot->Fill(fMCEvent->GetMuonsN(),1);
+    hNRespMuons->Fill(fMCEvent->GetResponseMuonsN(),1);
+    if (180-fMCEvent->GetPrimaryParticlePolar()<10){
+      hNMuonsTot_vertical->Fill(fMCEvent->GetMuonsN(),1);
+      hNRespMuons_vertical->Fill(fMCEvent->GetResponseMuonsN(),1);
+    }
+  }
+  
+  else return kTRUE;
+  
+  return kTRUE;
+}
+
+Int_t BMyRecoBEvt::PostProcess()
+{
+  std::cout<<"WE ARE IN BMyRecoBEvt::PostProcess"<<std::endl;
+  
+  if (fUseMCEvent){
+    //fill the response matrix
+    for (int iX=0; iX<100; iX++){
+      float normGen=hNRespMuons->GetBinContent(iX);
+      for (int iY=0; iY<100; iY++){
+	float bico=hNClusters_NRespMuon->GetBinContent(iX,iY);
+	if (normGen>0) hClustersRespMatrix->SetBinContent(iX,iY,bico/normGen);
+      }
+    }
+  }
+  
+  fOUT->cd();
+  hCharge->Write();
+  hChargeNoLED->Write();
+  hChargeOverAmpl->Write();
+  hTime->Write();
+  hTimeOverCharge->Write();
+  hMapOfHits1pe->Write();
+  hMapOfHitsNpe->Write();
+  hMapOfClusteredHits->Write();
+  hGeom->Write();
+  hPairwiseSpeed->Write();
+  hPairwiseSpeedMu->Write();
+  //  hDR->Write();
+  //  hDT->Write();
+  hNClusters->Write();
+  hClusterSize->Write();
+  hClusterSizeSS->Write();
+  hClustersPerHit->Write();
+  hSecNum->Write();
+  hSecNumQual->Write();
+  hDirection->Write();
+  hLL_verticalMu->Write();
+  hDeltaT_verticalMu->Write();
+  hDeltaT_verticalMu_Norm->Write();
+  //  hDeltaT_DEBUG->Write();
+  //  hDeltaTNorm_DEBUG->Write();
+  hTime_overestimation->Write();
+  //  hOverEstNoFac->Write();
+  //  hUsedHitFrac->Write();
+  //  hNTracksVsCut->Write();
+  //  pLLvertVsCut->Write();
+  //  h_LL3_nHits->Write();
+  //  h_LL4_nHits->Write();
+  //  h_LL5_nHits->Write();
+  if (fUseMCEvent){
+    hNRespMuons->Write();
+    hNRespMuonsBelow->Write();
+    hNClusters_NRespMuon->Write();
+    hClustersRespMatrix->Write();
+    hNHits_EnergyPrimary->Write();
+    hNHits_NRespMuon->Write();
+    hMuonDelay->Write();
+    hAngleRes->Write();
+    hSumPolarAngle->Write();
+    hPolarVertical->Write();
+    hPolarAll->Write();
+    hDirDebug->Write();
+    hDeltaT_verticalMuGen->Write();
+    hDeltaT_verticalMuDelta->Write();
+
+    hModMH_NRespMuons->Write();
+
+    hNPulsePerChannel->Write();
+
+    hNRespMuons_vertical->Write();
+    
+    hNMuonsTot->Write();
+    hNMuonsTot_vertical->Write();
+
+  }
+
+  /*
+  fOUT->mkdir("pairOffsets");
+  fOUT->cd("pairOffsets");
+  for (int iLevel=0; iLevel<23; iLevel++){
+    for (int iHist=0; iHist<hDeltaT_pairChan[iLevel].size(); iHist++){
+      hDeltaT_pairChan[iLevel][iHist].Write();
+    }
+  }
+  */     
+
+  return kTRUE;
+}
+
+std::vector<float> BMyRecoBEvt::getHitLocation(int hitID)
+{
+  int chanID=fEvent->GetImpulse(hitID)->GetChannelID();
+  std::vector<float> point;
+  point.push_back((fGeomTel->At(chanID))->GetX());
+  point.push_back((fGeomTel->At(chanID))->GetY());
+  point.push_back((fGeomTel->At(chanID))->GetZ());
+  return point;
+}
+
+float BMyRecoBEvt::getDeltaT_ns(int hit1_id, int hit2_id)
+{
+  float tim1=fEvent->GetImpulse(hit1_id)->GetTime();
+  float tim2=fEvent->GetImpulse(hit2_id)->GetTime();
+  float deltaT;
+  deltaT=(tim2-tim1); //one unit is 5ns
+  return deltaT;
+}
+
+float BMyRecoBEvt::getDeltaR_m(int hit1_id, int hit2_id)
+{
+  std::vector<float> Hit1=getHitLocation(hit1_id);
+  
+  std::vector<float> Hit2=getHitLocation(hit2_id);
+  
+  float deltaR=sqrt(pow(Hit1[0]-Hit2[0],2)+pow(Hit1[1]-Hit2[1],2)+pow(Hit1[2]-Hit2[2],2));
+  
+  return deltaR;
+}
+
+std::vector<float> BMyRecoBEvt::getDirection(int hit1_id, int hit2_id)
+{
+  std::vector <float> sec=getHitLocation(hit2_id);
+  
+  //previous hit on cluster
+  std::vector<float> first=getHitLocation(hit1_id);
+  //      dRprev=sqrt(pow(prevHit[0]-test[0],2)+pow(prevHit[1]-test[1],2)+pow(prevHit[2]-test[2],2));
+  
+  //direction from previous hit
+  std::vector<float> dir;
+  dir.push_back(sec[0]-first[0]);
+  dir.push_back(sec[1]-first[1]);
+  dir.push_back(sec[2]-first[2]);
+
+  return dir;
+}
+
+//return time of propagation from arbitrary point A on trajectory with direction s to coordinates M
+float BMyRecoBEvt::getTimeEstimate_ns(std::vector<float> A, std::vector<float> s, std::vector<float> M)
+{
+  std::vector<float> AM;
+  AM.push_back(M[0]-A[0]);
+  AM.push_back(M[1]-A[1]);
+  AM.push_back(M[2]-A[2]);
+  float modAM=sqrt(pow(AM[0],2)+pow(AM[1],2)+pow(AM[2],2));
+  float modS=sqrt(pow(s[0],2)+pow(s[1],2)+pow(s[2],2));
+  //  std::cout<<"AM: "<<modAM<<"  s: "<<modS<<std::endl;
+
+  float cosAlpha=(AM[0]*s[0]+AM[1]*s[1]+AM[2]*s[2])/(modAM*modS);
+  cosAlpha=round(cosAlpha*10000)*pow(10000,-1); //rounding to avoid nan in the next line
+  float sinAlpha=sqrt(1-pow(cosAlpha,2)); 
+
+  //water refraction index
+  float refWat=1.33;
+  float cos_c=1/1.33;
+  float sin_c=sqrt(1-cos_c*cos_c);
+  float tan_c=sin_c/cos_c;
+
+  
+  //  std::cout<<"cos, sin: "<<cosAlpha<<"   "<<sinAlpha<<"  "<<cos_c<<"  "<<sin_c<<"  "<<tan_c<<std::endl;
+  /*
+  float dist=modAM*(cosAlpha - 2.47*sinAlpha);
+  
+  //  std::cout<<"dist:  "<<dist<<std::endl;
+
+  float time=1e9*dist/(clight);
+  */
+
+  //separate distance in ligh and muon parts
+
+  float dMuon=modAM*cosAlpha - modAM*sinAlpha/tan_c;
+  float tMuon=1e9*dMuon/cVacuum;
+
+  float dLight=modAM*sinAlpha/sin_c;
+  float tLight=1e9*dLight/cWater;
+  
+  float time=tMuon+tLight;
+
+  //  std::cout<<"ddddddddddddd"<<std::endl;
+
+  return time;
+}
+
+//filter hits based on amplitude
+//order them in time
+std::vector<int> BMyRecoBEvt::filterHits(float minAmpl)
+{
+  int impulse_n=fEvent->GetTotImpulses();
+  std::vector<int> selectByAmpl_id; 
+  fHitIsUsed.clear();
+  fHitIsUsed.resize(impulse_n);
+
+  for (int j=0; j< impulse_n; j++){
+    fHitIsUsed[j]=false;
+    //if (fUseMCEvent) {
+    //  if (fEvent->GetImpulse(j)->GetTime()>fMCEvent->GetFirstMuonTime()+1500||fEvent->GetImpulse(j)->GetTime()<fMCEvent->GetFirstMuonTime()-1500) continue;
+    //}
+    
+    //118 and 119 are noisy. Take hits with integrated charge > 200
+    //fill simple histograms
+    float npe=fEvent->GetImpulse(j)->GetAmplitude();
+    float ampl=fEvent->GetImpulse(j)->GetTrueAmplitude();
+    int nch=fEvent->GetImpulse(j)->GetChannelID();
+    hCharge->Fill(npe,1);
+    if (npe>3) {
+      hChargeOverAmpl->Fill(npe*pow(ampl,-1),1);
+      hTime->Fill(fEvent->GetImpulse(j)->GetTime(),1);
+      hTimeOverCharge->Fill(fEvent->GetImpulse(j)->GetTime()/npe,1);
+    }
+    if (nch!=118&&nch!=119) hChargeNoLED->Fill(npe,1);
+    //    std::cout<<"nch: "<<nch<<std::endl;
+    if (fEvent->GetImpulse(j)->GetAmplitude()>1) hMapOfHits1pe->Fill(floor((nch)/24),(nch)%24+1);
+    if (fEvent->GetImpulse(j)->GetAmplitude()>3) hMapOfHitsNpe->Fill(floor((nch)/24),(nch)%24+1);
+	//	std::cout<<fGeomTel->At(nch)->GetZ()<<std::endl;
+    hGeom->Fill(floor((nch)/24),-fGeomTel->At(nch)->GetZ(),1);
+    //(fGeomTel->At(chanID))->GetZ()
+    if (/*!(!fUseMCEvent&&*/(nch!=118&&nch!=119)&&npe>minAmpl&&npe<15/*&&npe*pow(ampl,-1)<2.5*/) selectByAmpl_id.push_back(j); 
+  }
+
+  std::vector<int> orderT_id;
+  orderT_id.resize(selectByAmpl_id.size());
+  
+  for (Int_t j = 0; j < selectByAmpl_id.size(); j++){
+    hSecNum->Fill(floor(fEvent->GetImpulse(selectByAmpl_id[j])->GetChannelID()/24),1);
+    int nBefore=0;
+    for (int k=0; k<selectByAmpl_id.size(); k++) {
+      if (fEvent->GetImpulse(selectByAmpl_id[j])->GetTime()>fEvent->GetImpulse(selectByAmpl_id[k])->GetTime()) nBefore++;
+    }
+    orderT_id[nBefore]=selectByAmpl_id[j];
+  }
+
+  TH1F hNSameChan("hNSameChan","hNSameChan",192,0,192);
+  for (int iPul=0; iPul<orderT_id.size(); iPul++)
+    hNSameChan.Fill(fEvent->GetImpulse(orderT_id[iPul])->GetChannelID(),1);
+  int nModManyHits=0;
+  for (int iChan=0; iChan<192; iChan++)
+    if (hNSameChan.GetBinContent(iChan+1)>1) nModManyHits++;
+  
+  //  if (nModManyHits>0) orderT_id.clear();
+  /*
+  if (orderT_id.size()>2){
+    for (int k=0; k<orderT_id.size(); k++){
+      for (int p=k+1; p<orderT_id.size(); p++){
+	float dR=getDeltaR_m(orderT_id[k], orderT_id[p]);
+	float dT=getDeltaT_ns(orderT_id[k], orderT_id[p]);
+	hPairwiseSpeed->Fill(fabs((cVacuum*dT*1e-9)/dR),1);
+      }
+    }
+  }
+  */
+  
+
+  //  std::cout<<"orderT_i size: "<<orderT_id.size()<<std::endl;
+  return orderT_id;
+}
+
+//create quality cluster with first hit in time vtx_id, check direction of hits, all pairs should have propagation time < s/c*1.3
+std::vector<int> BMyRecoBEvt::makeQualityCluster(std::vector<int> cluster_id, int iVtx)
+{
+
+  //check direction of hits from given vertex, selected from preliminary cluster vector
+  //ensure that all pairs satisfy the timing cut
+
+  //preliminary quality cluster
+  std::vector<int> clusterPreQual_id;
+  //final quality cluster
+  std::vector<int> clusterQual_id;
+  //clusterQual_id.resize(0);
+  
+  if (cluster_id.size()>2) {
+    
+    //check if iVtx was used or not
+    if (!fHitIsUsed[cluster_id[iVtx]]){
+      clusterPreQual_id.push_back(cluster_id[iVtx]);
+      fHitIsUsed[cluster_id[iVtx]]=true;
+    }
+    else return clusterQual_id;
+
+    int nTaken=0;
+    std::vector<float> dirPrev;
+    
+    for (int k=iVtx+1; k<cluster_id.size(); k++){
+      
+      if (fHitIsUsed[cluster_id[k]]) continue;
+
+      //tested hit cluster_id[k]
+      
+      //previous hit on cluster clusterPreQual_id[nTaken])
+
+      //direction from previous hit
+      std::vector<float> dir = getDirection(clusterPreQual_id[nTaken], cluster_id[k]);
+      float dir_abs=sqrt(pow(dir[0],2)+pow(dir[1],2)+pow(dir[2],2));
+           
+      //if there are already two hits in the cluster check if the new hit is in the same direction
+      //cos of angle between directions [N-2 to N-1] and [N-1 to N]
+      float cos=1;
+      if (nTaken>0) {
+
+	float dirPrev_abs=sqrt(pow(dirPrev[0],2)+pow(dirPrev[1],2)+pow(dirPrev[2],2));
+	cos=(dir[0]*dirPrev[0]+dir[1]*dirPrev[1]+dir[2]*dirPrev[2])/(dir_abs*dirPrev_abs);
+
+	//	std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<modDir<<"   modDirPrev: "<<modDirPrev<<"   cos: "<<cos<<std::endl;
+      }
+      
+      //std::cout<<"chanID_vtx: "<<fExtractedImpulse->GetNch(cluster_id[vtx_id])<<"   chanID_test: "<<fExtractedImpulse->GetNch(cluster_id[k])<<"   modDir: "<<dir_abs<<"   dRprev: "<<dir_abs<<"   cos: "<<cos<<std::endl;
+
+      //if distance [N-1 to N] > 0 and angle < ~100deg take the hit
+      if (dir_abs>0&&cos>=-0.1) {
+	nTaken++;
+	//std::cout<<"take into cluster"<<std::endl;
+	clusterPreQual_id.push_back(cluster_id[k]);
+	dirPrev=dir;
+      }
+      
+    }
+
+    //check if all pairwise combinations within the cluster satisfy timing cut
+    std::vector<bool> isBad;  //vector of channels which do not pass the cut
+    isBad.resize(clusterPreQual_id.size());
+    for (int k=0; k<isBad.size(); k++){
+      isBad[k]=false;
+    }
+    
+    //final quality cluster
+    clusterQual_id.push_back(clusterPreQual_id[0]);  //push vertex
+    //    std::cout<<"preQ: "<<clusterPreQual_id[0]<<"  Q:"<<clusterQual_id[0]<<std::endl;
+    for (int k=1; k<clusterPreQual_id.size(); k++){
+      if (!isBad[k]) {
+	clusterQual_id.push_back(clusterPreQual_id[k]);
+	fHitIsUsed[clusterPreQual_id[k]]=true;
+      }
+    }
+    
+    if (clusterQual_id.size()<3) {
+      for (int iH=0; iH<clusterQual_id.size(); iH++) 
+	fHitIsUsed[clusterQual_id[iH]]=false;
+      clusterQual_id.clear();
+    }
+
+  }
+  
+  
+  //std::cout<<"clusterQual size: "<<clusterQual_id.size()<<";   content: ";
+  //  for (int j=0; j<clusterQual_id.size(); j++){
+  //    std::cout<<fExtractedImpulse->GetNch(clusterQual_id[j])<<" ";
+  // }
+  //  std::cout<<std::endl;
+  //std::cout<<"bloblo  "<<clusterQual_id.size()<<std::endl;
+  
+  return clusterQual_id;
+}
+
+
+//quality cluster for the same string
+//create quality cluster with first hit in time vtx_id, check direction of hits, all pairs should have propagation time < s/c
+
+std::vector<int> BMyRecoBEvt::makeQualitySSCluster(std::vector<int> cluster_id, int vtx_id)
+{
+  //check direction of hits from given vertex, selected from preliminary cluster vector
+  //ensure that all pairs satisfy the timing cut
+
+  //preliminary quality cluster
+  std::vector<int> clusterPreQual_id;
+  //final quality cluster
+  std::vector<int> clusterQual_id;
+  clusterQual_id.resize(0);
+  
+  if (cluster_id.size()>2) {
+    
+    clusterPreQual_id.push_back(cluster_id[vtx_id]);
+    int stringID=floor(fEvent->GetImpulse(cluster_id[vtx_id])->GetChannelID()/24);
+    
+    int nTaken=0;
+    std::vector<float> dirPrev;
+    
+    for (int k=vtx_id+1; k<cluster_id.size(); k++){
+           
+      //consider hits only from the same string as vertex
+      
+      if (floor(fEvent->GetImpulse(cluster_id[vtx_id])->GetChannelID()/24)!=stringID) continue;
+
+      //tested hit cluster_id[k]
+      
+      //previous hit on cluster clusterPreQual_id[nTaken])
+
+      //direction from previous hit
+      std::vector<float> dir = getDirection(clusterPreQual_id[nTaken], cluster_id[k]);
+      float dir_abs=sqrt(pow(dir[0],2)+pow(dir[1],2)+pow(dir[2],2));
+           
+      //if there are already two hits in the cluster check if the new hit is in the same direction
+      //cos of angle between directions [N-2 to N-1] and [N-1 to N]
+      float cos=1;
+      if (nTaken>0) {
+
+	float dirPrev_abs=sqrt(pow(dirPrev[0],2)+pow(dirPrev[1],2)+pow(dirPrev[2],2));
+	cos=(dir[0]*dirPrev[0]+dir[1]*dirPrev[1]+dir[2]*dirPrev[2])/(dir_abs*dirPrev_abs);
+
+	//	std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<modDir<<"   modDirPrev: "<<modDirPrev<<"   cos: "<<cos<<std::endl;
+      }
+      //std::cout<<"chanID_vtx: "<<fExtractedImpulse->GetNch(cluster_id[vtx_id])<<"   chanID_test: "<<fExtractedImpulse->GetNch(cluster_id[k])<<"   dir_abs: "<<dir_abs<<"   cos: "<<cos<<std::endl;
+      //      std::cout<<"chanID_vtx: "<<chanID_vtx<<"   chanID_test: "<<chanID_test<<"   modDir: "<<dir_abs<<"   dRprev: "<<dRprev<<"   cos: "<<cos<<std::endl;
+
+      //if distance [N-1 to N] > 0 and angle < ~100deg take the hit
+      if (dir_abs>0&&cos>=-0.1) {
+	nTaken++;
+	//std::cout<<"take into cluster"<<std::endl;
+	clusterPreQual_id.push_back(cluster_id[k]);
+	dirPrev=dir;
+      }
+      
+    }
+
+    //check if all pairwise combinations within the preliminary cluster satisfy timing cut
+    
+    std::vector<bool> isGood; //vector of good flags
+    isGood.resize(clusterPreQual_id.size());
+    for (int k=0; k<isGood.size(); k++){
+      isGood[k]=true;
+    }
+    
+    if (clusterPreQual_id.size()>2){
+      for (int k=0; k<clusterPreQual_id.size(); k++){
+	for (int p=k+1; p<clusterPreQual_id.size(); p++){
+	  float dR=getDeltaR_m(clusterPreQual_id[k], clusterPreQual_id[p]);
+	  float dT=getDeltaT_ns(clusterPreQual_id[k], clusterPreQual_id[p]);
+	  //	  if (fUseMCEvent&&fMCEvent->GetResponseMuonsN()==1) hPairwiseSpeed->Fill(fabs((cWater*dT*1e-9)/dR),1);
+	  if (cWater*dT*1e-9/dR>1.3) isGood[p]=false; 
+	}
+      }
+    }
+    
+    //fill final quality cluster
+    clusterQual_id.push_back(clusterPreQual_id[0]);
+    for (int k=1; k<clusterPreQual_id.size(); k++){
+      if (isGood[k]) clusterQual_id.push_back(clusterPreQual_id[k]);
+    }
+    
+    if (clusterQual_id.size()<3) clusterQual_id.resize(0);
+   
+    //check dT DEBUG
+    for (int p=1; p<clusterQual_id.size(); p++){
+      float deltaT=getDeltaT_ns(clusterQual_id[p-1], clusterQual_id[p]);
+      float deltaR=getDeltaR_m(clusterQual_id[p-1], clusterQual_id[p]);
+      hDeltaT_DEBUG->Fill(deltaT,1);
+      hDeltaTNorm_DEBUG->Fill((cWater*deltaT*1e-9)/deltaR,1);
+    }
+    
+ 
+  }
+  
+  /*  
+  std::cout<<"clusterQual size: "<<clusterQual_id.size()<<";   content: ";
+  for (int j=0; j<clusterQual_id.size(); j++){
+    std::cout<<fExtractedImpulse->GetNch(clusterQual_id[j])<<" ";
+  }
+  std::cout<<std::endl;
+  //  std::cout<<"bloblo  "<<clusterQual_id.size()<<std::endl;
+  */
+
+  return clusterQual_id;
+}
+
+//maximization of LL
+//likelyhood* P(x1, y1, z1, x2, y2, z2, T1, T2)*P(x2, y2, z2, x3, y3, z3, T2, T3)*P(...)...
+//Ti is computed propagation time
+//P is gaussian with ~resolution width or any other function peaked at measured time
+
+//function to calculate likelyhood value 
+//takes geometry, array of impulses, vector of hit id, zero point and direction of trajectory
+
+float BMyRecoBEvt::getLvalue(std::vector<int> clusterQual_id, std::vector<float> zero, std::vector<float> direction)
+{
+  //array of time of impulse arrival as calculated from given trajectory 
+  std::vector<float> timeEstimate;
+  //array of time of impulse arrival as measured
+  std::vector<float> timeMeasured;  
+  //calculate time of propagation to each channel
+  for (int i=0; i<clusterQual_id.size(); i++){
+    //get location of hit:
+    std::vector<float> M = getHitLocation(clusterQual_id[i]);
+    //fill time vectors
+    //std::cout<<"sksksksksks"<<std::endl;
+    timeEstimate.push_back(getTimeEstimate_ns(zero, direction, M));
+    timeMeasured.push_back(5*fEvent->GetImpulse(clusterQual_id[i])->GetTime()); //5ns is integration window
+  }
+  
+  //return value
+  float L=1;
+  float L3=1;
+  float L4=1;
+  float L5=1;
+  int nUsedHits=0;
+  
+  //  std::cout<<"bbbb"<<std::endl;
+
+  float sigma=50;
+  //define "resolution function"
+  //  for (int j=0; j<1000; j++){
+    float fcut=300;
+    //*sigma;
+    nUsedHits=0;
+    L=1;
+    L3=1;
+    L4=1;
+    L5=1;
+    for (int i=1; i<clusterQual_id.size(); i++) {
+      float mean=4*2*(timeMeasured[i]-timeMeasured[i-1]);  //4 is empiric factor (this is outdated) 
+      float meanNoFac=(timeMeasured[i]-timeMeasured[i-1]);  
+      float estimate=(timeEstimate[i]-timeEstimate[i-1]);
+      
+      hTime_overestimation->Fill((estimate-meanNoFac)*pow(sigma,-1),1);
+      //      hLOverEstNoFac->Fill((estimate-meanNoFac)*pow(sigma,-1),1);
+      
+      if (fabs(estimate-meanNoFac)>fcut) continue;
+      else nUsedHits++;
+      //      std::cout<<"mean: "<<meanNoFac<<"   estimate: "<<estimate<<std::endl;   
+      float P=pow(sqrt(2*TMath::Pi())*sigma,-1)*exp(-pow(estimate-meanNoFac,2)/(2*pow(sigma,2)));
+      //      std::cout<<"probability: "<<P<<"    components: "<<pow(sqrt(2*TMath::Pi())*sigma,-1)<<"    "<<pow(estimate-meanNoFac,2)<<"   "<<-pow(estimate-meanNoFac,2)/(2*pow(sigma,2))<<"   "<<exp(-pow(estimate-meanNoFac,2)/(2*pow(sigma,2)))<<std::endl;   
+      L=L*P;
+      if (nUsedHits<=2) L3=L;
+      if (nUsedHits<=4) L4=L;
+      if (nUsedHits<=5) L5=L;
+    }
+    
+    //    hUsedHitFrac->Fill(nUsedHits*pow(clusterQual_id.size(),-1),1);
+    
+    //h_LL3_nHits->Fill(nUsedHits,-log10(L)*pow(nUsedHits,-1),1);
+      //    if (nUsedHits>=6) h_LL3_nHits->Fill(nUsedHits,-log10(L3),1);
+      //    if (nUsedHits>=6) h_LL4_nHits->Fill(nUsedHits,-log10(L4),1);
+      //   if (nUsedHits>=6) h_LL5_nHits->Fill(nUsedHits,-log10(L5),1);
+
+    //    if (nUsedHits>6) std::cout<<"cut: "<<fcut<<"   hits used in LL: "<<nUsedHits<<"  L: "<<L3<<std::endl;
+
+    /*    
+    if (nUsedHits>=5) {
+      hNTracksVsCut->Fill(fcut,1);
+      pLLvertVsCut->Fill(fcut,-log10(L5));
+      //std::cout<<"cut: "<<j*sigma<<"   hits used in LL: "<<nUsedHits<<"  L: "<<L<<std::endl;
+      //	return L;
+    }
+    */
+    //    else return 1;
+    //  }
+  return L;
+}
+
+std::vector<float> BMyRecoBEvt::GetPrimaryDirection()
+{
+  std::vector<float> dir;
+  dir.push_back(cos(3.14*(fMCEvent->GetPrimaryParticleAzimuth()*pow(180,-1)))*sin(3.14*fMCEvent->GetPrimaryParticlePolar()*pow(180,-1)));
+  dir.push_back(sin(3.14*(fMCEvent->GetPrimaryParticleAzimuth()*pow(180,-1)))*sin(3.14*fMCEvent->GetPrimaryParticlePolar()*pow(180,-1)));
+  dir.push_back(cos(3.14*(fMCEvent->GetPrimaryParticlePolar())*pow(180,-1)));
+  return dir;
+}
+
+int BMyRecoBEvt::PlotClusters(std::vector<int> order_id)
+{
+  std::vector<bool> hitIsUsed;
+  
+  std::vector<float> downwardDirection;
+  downwardDirection.push_back(0);
+  downwardDirection.push_back(0);
+  downwardDirection.push_back(-1);
+  
+  float polarAngle=fMCEvent->GetPrimaryParticlePolar();
+
+  std::vector<float> primDirection=GetPrimaryDirection();
+  
+  float PDabs=sqrt(pow(primDirection[0],2)+pow(primDirection[1],2)+pow(primDirection[2],2));
+
+  float cosDebug=-primDirection[2]*pow(PDabs,-1);
+  //  std::cout<<PDabs<<std::endl;
+
+  //int iLastBins=0;
+  if (cos(3.14*(fMCEvent->GetPrimaryParticlePolar())/180)<-0.98) {
+    iLastBins++;
+    //   std::cout<<fMCEvent->GetPrimaryParticlePolar()<<"     "<<3.14*(fMCEvent->GetPrimaryParticlePolar())/180<<"     "<<cos(3.14*(fMCEvent->GetPrimaryParticlePolar())/180)<<"     "<<iLastBins<<std::endl;
+  }
+  
+
+  hDirDebug->Fill(acos(cosDebug),1);
+    //acos(cosDebug),1);
+  
+  if (order_id.size()<6) return 1;
+
+  //  TH1F hVectorPolarMean("hVectorPolarMean","hVectorPolarMean",1000,-3.14,3.14);
+  
+  int nVectors=0;
+  std::vector<float> vSum;
+  for (int i=0; i<3; i++) vSum.push_back(0);
+
+  for (int i=0; i<order_id.size(); i++){
+    for (int j=i+1; j<order_id.size(); j++){
+      float deltaT=getDeltaT_ns(order_id[i],order_id[j]);
+      float deltaR=getDeltaR_m(order_id[i],order_id[j]);
+      if (deltaR==0) continue;
+      if ((deltaT*1e-9)>deltaR/(cWater*1.3)) continue;
+      //std::cout<<deltaT<<"   "<<deltaR<<"   "<<(deltaR/(deltaT*1e-9))/cWater<<std::endl;
+      nVectors++;
+      std::vector<float> dir=getDirection(order_id[i],order_id[j]);
+      
+      for (int k=0; k<3; k++) vSum[k]=vSum[k]+dir[k];
+
+      /*
+      std::vector<float> A=getHitLocation(fEvent->GetImpulse(order_id[i])->GetChannelID());
+      std::vector<float> B=getHitLocation(fEvent->GetImpulse(order_id[j])->GetChannelID());
+      dir.push_back(B[0]-A[0]);
+      dir.push_back(B[1]-A[1]);
+      dir.push_back(B[2]-A[2]);
+      */
+
+      float dirAbs=sqrt(dir[0]*dir[0]+dir[1]*dir[1]+dir[2]*dir[2]);
+
+      float cosRes=(dir[0]*primDirection[0]+dir[1]*primDirection[1]+dir[2]*primDirection[2])/(dirAbs*PDabs);
+      float res=acos(cosRes);
+      //hAngleRes->Fill(res,1);
+    }
+  }
+  
+  if (nVectors==0) return 1;
+  float vSumAbs=sqrt(vSum[0]*vSum[0]+vSum[1]*vSum[1]+vSum[2]*vSum[2]);
+  float cosMean=(vSum[0]*primDirection[0]+vSum[1]*primDirection[1]+vSum[2]*primDirection[2])/(vSumAbs*PDabs);
+  
+  //std::cout<<vSum[0]<<"  "<<vSum[1]<<"  "<<vSum[2]<<"  "<<acos(cosMean)<<std::endl;
+  hAngleRes->Fill(acos(cosMean)*pow(3.14,-1)*180,1);
+  
+  
+  float sumPolar=-vSum[2]/(PDabs*vSumAbs);
+  hSumPolarAngle->Fill(acos(sumPolar),1);
+}
