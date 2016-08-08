@@ -1,0 +1,1112 @@
+//////////////////////////////////////////////////////////////////////////////
+//
+// BReconstruct
+//
+// The base class for reconstruction. It gives various instruments needed for event reconstruction.
+// Practically, we realize all common methods here that could be used for any type of event
+// Specific reconstruction procedure must be realized in derived class (i.e. choice of zero approximation,
+// type of minimizer, etc)
+//
+//////////////////////////////////////////////////////////////////////////////
+#include "BReconstruct.h"
+
+#include "MLog.h"
+#include "MLogManip.h"
+
+#include "MParList.h"
+#include "TMath.h"
+#include "TTimeStamp.h"
+
+#include <fstream>
+#include <string.h>
+
+#include "BGeomTel.h"
+#include "BEvent.h"
+#include "BEventMask.h"
+#include "BSecInteraction.h"
+#include "BRecParameters.h"
+#include "BChannelMask.h"
+
+#include <math.h>
+#include <vector>
+#include "TRotation.h"
+
+#include "BSource.h"
+#include "BMuonCriterionParameters.h"
+#include <map>
+#include <limits>
+#include <assert.h>
+
+ClassImp(BReconstruct);
+
+using namespace std;
+
+//
+//
+//
+BReconstruct::BReconstruct(const char * name, const char * title)
+  : fEvent(NULL), fEventMask(NULL), fGeomTel(NULL), fSecInteraction(NULL), fRecParameters(NULL), fChannelMask(NULL), fZeroSecInteraction(NULL), fMuonCriterionParams(NULL) {
+  //, fEventSource(NULL), fMCEventMask(NULL) {
+  fName  = name  ? name  : "BReconstruct";
+  fTitle = title ? title : "Reconstruct";
+
+  fMinimizer = 0;
+  fFunctor   = 0;
+  fVerbose   = kFALSE;
+  //fIsWOAzimuth = kFALSE;
+  fFixAzimuth = kFALSE;
+  fNchIsRes = -1;
+
+  fEventMaskName = "";
+}
+
+//
+//
+//
+Int_t BReconstruct::PreProcess(MParList * pList) {
+  if(fEventMaskName == "") {
+    * fLog << err << "BReconstruct::PreProcess: Mask name is not defined. Use BReconstruct::SetMaskName()" << endl;
+    return kFALSE;
+  }
+
+  fEvent = (BEvent*)pList->FindObject("BEvent", "BEvent");
+  if (!fEvent)
+    {
+      * fLog << err << AddSerialNumber("BEvent") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+
+  fEventMask = (BEventMask*)pList->FindObject(fEventMaskName, "BEventMask");
+  if (!fEventMask)
+    {
+      * fLog << err << AddSerialNumber("BEventMask") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+
+  fGeomTel = (BGeomTel*)pList->FindObject(AddSerialNumber("BGeomTel"));
+  if (!fGeomTel)
+    {
+      * fLog << err << AddSerialNumber("BGeomTel") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+
+  fChannelMask = (BChannelMask*)pList->FindObject("BChannelMask");
+  if (!fChannelMask)
+    {
+      * fLog << err << AddSerialNumber("BChannelMask") << " not found... aborting." << endl;
+      return kFALSE;
+    }
+
+  fZeroSecInteraction = (BMuon*)pList->FindCreateObj("BSecInteraction", "BZeroSecInteraction");
+  if(!fZeroSecInteraction) {
+    * fLog << err << "Cannot create " << AddSerialNumber("BSecInteraction") << endl;
+    return kFALSE;
+  }
+
+  //fEventSource = (BSourceEAS*)pList->FindObject("MCEventSource");
+  //if (!fEventSource) {
+  //*fLog << err << AddSerialNumber("BEventSource") << " not found... aborting." << endl;
+  //return kFALSE;
+  //}
+
+  fMuonCriterionParams = (BMuonCriterionParameters*)pList->FindObject(AddSerialNumber("BMuonCriterionParameters"));
+  if(!fMuonCriterionParams) {
+    *fLog << err << "Cannot find " << AddSerialNumber("BMuonCriterionParameters") << endl;
+    return kFALSE;
+  }
+
+  //fMCEventMask = (BEventMask*)pList->FindObject("MCEventMask");
+  //if (!fMCEventMask) {
+  //*fLog << err << AddSerialNumber("MCEventMask") << " not found... aborting." << endl;
+  //return kFALSE;
+  //}
+
+  // Minimizer
+  //fMinimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "");
+  fMinimizer = ROOT::Math::Factory::CreateMinimizer("Minuit", "");
+  fMinimizer->SetMaxFunctionCalls(1000000); // for Minuit/Minuit2
+  fMinimizer->SetTolerance(0.001);
+  if(fVerbose) {
+    fMinimizer->SetPrintLevel(2);
+  }
+  else {
+    fMinimizer->SetPrintLevel(-2);
+  }
+
+
+  fFunctor = new ROOT::Math::Functor(this, & BReconstruct::Chi2, 6);
+  fMinimizer->SetFunction(* fFunctor);
+
+  return kTRUE;
+}
+
+
+//
+//
+//
+Int_t BReconstruct::Process()
+{
+  // shift of coordinate origin along Z
+  fXshift = 0;
+  fYshift = 0;
+  fZshift = 0;
+  
+  for(int i = 0; i < (int)fGeomTel->GetNumOMs(); i++) {
+    fXshift += fGeomTel->At(i)->GetX();
+    fYshift += fGeomTel->At(i)->GetY();
+    fZshift += fGeomTel->At(i)->GetZ();
+  }
+  fXshift = fXshift / fGeomTel->GetNumOMs();
+  fYshift = fYshift / fGeomTel->GetNumOMs();
+  fZshift = fZshift / fGeomTel->GetNumOMs();
+
+  // static int nn = 0;
+  // nn++;
+  // if(nn%10 == 0) {
+  //    cout << nn << endl;
+  // }
+  InitialValues();
+  Int_t ii = Minimize();
+  return ii;
+}
+
+//
+//
+//
+Int_t BReconstruct::PostProcess() {
+  return kTRUE;
+}
+
+//
+// Вычисляет chi2 для любой частицы по времени первого сигнала на ОМ
+// T0 вычисляется из требования нулевой производной, а не задается в виде свободного параметра
+// Функция имеет строго заданную сигнатуру для того, чтобы ее можно было
+// подключать к минимайзеру
+//
+Double_t BReconstruct::Chi2(const Double_t * x){
+  const double sigmat = 2;
+
+  if(fVerbose) {
+    cout.precision(10);
+    cout << fixed;
+    for(int i = 0; i < 6; i++) {
+      cout << i << " " << setw(5) << x[i] << endl;
+    }
+  }
+
+  fSecInteraction->SetParameters(x);
+
+  Int_t      totch = fEvent->GetChannelN();
+  Int_t*   nchgeom = new Int_t[totch];
+  Double_t* Ttheor = new Double_t[totch];
+  Double_t* Texp   = new Double_t[totch];
+//  Double_t* A   = new Double_t[totch];
+
+  // заполнение вектора Ttheor и вычисление T0.
+  double T0 = 0;   // начальное время частицы
+  int nchcur = -1;
+  int ii = 0;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse * imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    if(nch != nchcur && fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
+      nchgeom[ii] = nch;
+      Double_t xom = fGeomTel->At(nch)->GetX() - fXshift;
+      Double_t yom = fGeomTel->At(nch)->GetY() - fYshift;
+      Double_t zom = fGeomTel->At(nch)->GetZ() - fZshift;
+      //			if(fIsWOAzimuth && fFixAzimuth) {
+      //				cout << "Error" << endl;
+      //				exit(1);
+      //			}
+      //			else if(fIsWOAzimuth) {
+      //				Ttheor[ii] = fSecInteraction->GetStraightLightTimeWOAzimuth(nchgeom[ii], fGeomTel);
+      //			}
+      //			else if(fFixAzimuth) {
+      //				Ttheor[ii] = fSecInteraction->GetStraightLightTimeFixAzimuth(nchgeom[ii], fGeomTel);
+      //			}
+      //			else {
+      if(fFixAzimuth) {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, 0, 0, zom);
+      }
+      else {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, xom, yom, zom);
+      }
+      //			}
+
+	  //	  A[ii]   = imp->GetAmplitude();
+      Texp[ii]   = imp->GetTime();
+      T0 += Texp[ii] - Ttheor[ii];
+      ii++;
+      nchcur = imp->GetChannelID();
+    }
+  }
+
+  if(ii > 0) {
+    T0 /= ii;
+  }
+
+  double chi2 = 0;
+  for(int i = 0; i < ii; i++) {
+    chi2 += (Ttheor[i] + T0 - Texp[i]) * (Ttheor[i] + T0 - Texp[i]);
+    if(fVerbose) {
+      cout << fixed;
+      //cout << i << " nchgeom = " << nchgeom[i] << " Ttheor + T0 = " << Ttheor[i] + T0 <<
+      //  " Texp = " << Texp[i] << " A = " << A[i] << " dT = " << Ttheor[i] + T0 - Texp[i] << endl;
+      cout << i << " nchgeom = " << nchgeom[i] << " Ttheor + T0 = " << Ttheor[i] + T0 <<
+      " Texp = " << Texp[i] << " dT = " << Ttheor[i] + T0 - Texp[i] << endl;
+    }
+  }
+  chi2 /= (sigmat * sigmat * (ii - 3));
+
+  if(fVerbose) {
+    cout << scientific;
+    cout << "chi2 = " << chi2 << endl;
+    string tmp;
+    getline(cin, tmp);
+  }
+
+  if(ii < 4) {
+    for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+      BImpulse * imp = fEvent->GetImpulse(i);
+      int nchgeom = imp->GetChannelID();
+      double Texp   = imp->GetTime();
+      cout << fixed;
+      cout << i << " nchgeom = " << nchgeom << " Texp = " << Texp
+           << " filter = " << fEventMask->GetOrigin(i)->GetFlag() << endl;
+    }
+    cout << "ii < 4" << endl;
+    int kkk;
+    cin >> kkk;
+  }
+
+  delete [] Ttheor;
+  delete [] Texp;
+  delete [] nchgeom;
+  //delete [] A;
+  return chi2;
+}
+
+//______________________________________________________________________
+Double_t BReconstruct::M_estimator(const Double_t * x) {
+  // Функция имеет строго заданную сигнатуру для того, чтобы ее можно было
+  // подключать к минимайзеру.
+  // Calculates M-estimator function sqrt(1+(t_expected + t_experiment)^2).
+  // Its minimization might be more stable than Chi2
+
+  const double sigmat = 2;
+
+  if(fVerbose) {
+    cout.precision(10);
+    cout << fixed;
+    for(int i = 0; i < 6; i++) {
+      cout << i << " " << setw(5) << x[i] << endl;
+    }
+  }
+
+  fSecInteraction->SetParameters(x);
+
+  Int_t      totch = fEvent->GetChannelN();
+  Int_t*   nchgeom = new Int_t[totch];
+  Double_t* Ttheor = new Double_t[totch];
+  Double_t* Texp   = new Double_t[totch];
+
+  // заполнение вектора Ttheor и вычисление T0.
+  double T0 = 0;   // начальное время частицы
+  int nchcur = -1;
+  int ii = 0;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse * imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    if(nch != nchcur && fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
+      nchgeom[ii] = nch;
+      Double_t xom = fGeomTel->At(nch)->GetX() - fXshift;
+      Double_t yom = fGeomTel->At(nch)->GetY() - fYshift;
+      Double_t zom = fGeomTel->At(nch)->GetZ() - fZshift;
+      //			if(fIsWOAzimuth && fFixAzimuth) {
+      //				cout << "Error" << endl;
+      //				exit(1);
+      //			}
+      //			else if(fIsWOAzimuth) {
+      //				Ttheor[ii] = fSecInteraction->GetStraightLightTimeWOAzimuth(nchgeom[ii], fGeomTel);
+      //			}
+      //			else if(fFixAzimuth) {
+      //				Ttheor[ii] = fSecInteraction->GetStraightLightTimeFixAzimuth(nchgeom[ii], fGeomTel);
+      //			}
+      //			else {
+      if(fFixAzimuth) {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, 0, 0, zom);
+      }
+      else {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, xom, yom, zom);
+      }
+      //			}
+
+      Texp[ii]   = imp->GetTime();
+      T0 += Texp[ii] - Ttheor[ii];
+      ii++;
+      nchcur = imp->GetChannelID();
+    }
+  }
+
+  if(ii > 0) {
+    T0 /= ii;
+  }
+
+  double chi2 = 0;
+  for(int i = 0; i < ii; i++) {
+    chi2 += (Ttheor[i] + T0 - Texp[i]) * (Ttheor[i] + T0 - Texp[i]);
+    if(fVerbose) {
+      cout << fixed;
+      cout << i << " nchgeom = " << nchgeom[i] << " Ttheor + T0 = " << Ttheor[i] + T0 <<
+        " Texp = " << Texp[i] << " dT = " << Ttheor[i] + T0 - Texp[i] << endl;
+    }
+  }
+  chi2 /= (sigmat * sigmat * (ii - 3));
+
+  if(fVerbose) {
+    cout << scientific;
+    cout << "chi2 = " << chi2 << endl;
+    string tmp;
+    getline(cin, tmp);
+  }
+
+  if(ii < 4) {
+    for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+      BImpulse * imp = fEvent->GetImpulse(i);
+      int nchgeom = imp->GetChannelID();
+      double Texp   = imp->GetTime();
+      cout << fixed;
+      cout << i << " nchgeom = " << nchgeom << " Texp = " << Texp
+           << " filter = " << fEventMask->GetOrigin(i)->GetFlag() << endl;
+    }
+    cout << "ii < 4" << endl;
+    int kkk;
+    cin >> kkk;
+  }
+
+  delete [] Ttheor;
+  delete [] Texp;
+  delete [] nchgeom;
+  return chi2;
+}
+
+//
+//
+//
+Int_t BReconstruct::Minimize() {
+  // проверка на минимальное количество сработавших каналов, требуемых для восстановления
+  /*  int ii = 0;
+      int nchcur = -1;
+      for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+      BImpulse * imp = fEvent->GetImpulse(i);
+      if(imp->GetChannelID() != nchcur && fEventMask->GetOrigin(i)->GetFlag() == 1) {
+      nchcur = imp->GetChannelID();
+      ii++;
+      }
+      }
+
+      if(ii < 5) {
+      return kCONTINUE;
+      }
+  */
+  if(fVerbose) {
+    cout << "MINMIZER starts. parnum = " << fRecParameters->GetNumPar() << endl;
+  }
+
+  fMinimizer->Clear();
+
+  // Set the free variables to be minimized!
+  BRecParameters * recpar = fRecParameters;
+  char parname[80];
+  for(int i = 0; i < recpar->GetNumPar(); i++) {
+    sprintf(parname, "x%d", i);
+    if(recpar->GetIsFixed(i) == 1) {
+      fMinimizer->SetFixedVariable(i, parname, recpar->GetInitial(i));
+    }
+    else {
+      fMinimizer->SetVariable(i, parname, recpar->GetInitial(i), recpar->GetStep(i));
+    }
+    fMinimizer->SetVariableLimits(i, recpar->GetMinLimit(i), recpar->GetMaxLimit(i));
+    if(fVerbose) {
+      cout << parname << " isfix = " << recpar->GetIsFixed(i) << " init = " <<
+        recpar->GetInitial(i) << " step = " << recpar->GetStep(i) << endl;
+    }
+  }
+
+  // do the minimization
+  fMinimizer->Minimize();
+
+  const double * xs = fMinimizer->X();
+  if(fVerbose) {
+    cout << fixed;
+    std::cout << "Minimum: f(" << xs[0] << ", " << xs[1] << ", " << xs[2] <<
+      //xs[3] << ", " << 180* TMath::ASin(TMath::Sin(xs[4])) / 3.1416 << ", " << 180 * TMath::ASin(TMath::Sin(xs[5])) / 3.1416 << "): "
+      xs[3] << ", " << xs[4] << ", " << xs[5] << "): "
+              << fMinimizer->MinValue() << std::endl;
+    cout << "ThetaRec= " << 180 - 180 * xs[5] / 3.1416 << endl;
+  }
+
+  fSecInteraction->SetParameters(xs);
+
+  const double * xerr = fMinimizer->Errors();
+  fRecParameters->SetErrors(xerr);
+  fRecParameters->SetFuncValue(fMinimizer->MinValue());
+  fRecParameters->SetQual(fMinimizer->Status());
+
+  fRecParameters->SetThetaRec(180 * TMath::ACos(TMath::Cos(fSecInteraction->GetPolarAngle())) / TMath::Pi());
+  //	fRecParameters->SetThetaRec(180 * TMath::ACos(TMath::Cos(fSecInteraction->GetPolarAngle())) / TMath::Pi());
+  double fnpi = fSecInteraction->GetAzimuthAngle() / (2 * TMath::Pi());
+  double npi;
+  std::modf(fnpi, & npi);
+  double phi = fSecInteraction->GetAzimuthAngle() - 2 * TMath::Pi() * npi;
+  if(phi < 0) {
+    phi = phi + 2 * TMath::Pi();
+  }
+  //fRecParameters->SetPhiRec(180 * (fSecInteraction->GetAzimuthAngle() - 2 * TMath::Pi() * npi) / TMath::Pi());
+  //fRecParameters->SetThetaRec(180 * fSecInteraction->GetPolarAngle() / TMath::Pi());
+  fRecParameters->SetPhiRec(180 * phi / TMath::Pi());
+  fRecParameters->SetX0Rec(((BMuonX0Y0*)fSecInteraction)->GetX0());
+  fRecParameters->SetY0Rec(((BMuonX0Y0*)fSecInteraction)->GetY0());
+
+  Residuals();
+
+  fRecParameters->SetReadyToSave();
+
+  if(fVerbose) {
+    string tmp;
+    getline(cin, tmp);
+  }
+  return kTRUE;
+}
+
+
+//
+//
+//
+BReconstruct::~BReconstruct() {
+  if(fFunctor) {
+    delete fFunctor;
+  }
+  if(fMinimizer) {
+    delete fMinimizer;
+  }
+}
+
+//______________________________________________________________________
+void BReconstruct::Print() {
+
+}
+
+//______________________________________________________________________
+void BReconstruct::Residuals() {
+  const double sigmat = 2;
+
+  //const double xs[6] = {((BMuonX0Y0*)fSecInteraction)->GetX0(), -((BMuonX0Y0*)fSecInteraction)->GetY0(), 0, 0, 0, fSecInteraction->GetPolarAngle()};
+  //fSecInteraction->SetParameters(xs);
+
+  Int_t      totch = fEvent->GetChannelN();
+  Int_t*   nchgeom = new Int_t[totch];
+  Double_t* Ttheor = new Double_t[totch];
+  Double_t* Texp   = new Double_t[totch];
+
+  // заполнение вектора Ttheor и вычисление T0.
+  double T0 = 0;   // начальное время частицы
+  int nchcur = -1;
+  int ii = 0;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse * imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    //if(nch != nchcur && ((fEventMask->GetOrigin(i)->GetFlag() == 1 && channelflag) || (nch == fNchIsRes))) {
+    //cout << nch << " " << fEventMask->GetOrigin(i)->GetFlag() << " " << channelflag << endl;
+    if(nch != nchcur && fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib || nch == fNchIsRes)) {
+      nchgeom[ii] = nch;
+      Double_t xom = fGeomTel->At(nch)->GetX() - fXshift;
+      Double_t yom = fGeomTel->At(nch)->GetY() - fYshift;
+      Double_t zom = fGeomTel->At(nch)->GetZ() - fZshift;
+
+      if(fFixAzimuth) {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, 0, 0, zom);
+      }
+      else {
+        Ttheor[ii] = fSecInteraction->GetStraightLightTime(fGeomTel, xom, yom, zom);
+      }
+
+      Texp[ii]   = imp->GetTime();
+      T0 += Texp[ii] - Ttheor[ii];
+      ii++;
+      nchcur = imp->GetChannelID();
+    }
+  }
+  //int kkk;
+  //cin >> kkk;
+  if(ii > 0) {
+    T0 /= ii;
+  }
+
+  double chi2 = 0;
+  for(int i = 0; i < ii; i++) {
+    chi2 += (Ttheor[i] + T0 - Texp[i]) * (Ttheor[i] + T0 - Texp[i]);
+  }
+  chi2 /= (sigmat * sigmat * (ii - 3));
+  //if(chi2 != fRecParameters->GetFuncValue()) {
+  //cout << "chi2 = " << chi2 << " fFuncValue = " << fRecParameters->GetFuncValue() << endl;
+  //int kkk;
+  //cin >> kkk;
+  //}
+
+  fRecParameters->SetNhit(ii);
+  fRecParameters->SetTimeRec(T0);
+
+  for(int i = 0; i < ii; i++) {
+    fRecParameters->SetTres(i, Ttheor[i] + T0 - Texp[i]);
+    fRecParameters->SetNchGeom(i, nchgeom[i]);
+  }
+
+  delete [] Ttheor;
+  delete [] Texp;
+  delete [] nchgeom;
+}
+
+//______________________________________________________________________
+void BReconstruct::InitialValues() {
+  // Double_t xmin  = -10;
+  // Double_t xstep =   2;
+  // Int_t xn =   10;
+
+  // Double_t ymin  = -10;
+  // Double_t ystep =   2;
+  // Int_t yn =   10;
+
+  //Double_t phimin  = 0;
+  //Double_t phistep = 10 * TMath::Pi() / 180;
+  //Int_t phin =   36;
+
+  // Double_t thetamin  = 90 * TMath::Pi() / 180;
+  // Double_t thetastep = 10 * TMath::Pi() / 180;
+  // Int_t thetan =   9;
+
+  // double chimin = 10000000;
+  double xinit = 0;
+  double yinit = 0;
+  double phiinit = 0;
+  double thetainit = 0;
+
+  if (fInitials_type == 2) {
+    thetainit = (fMuonCriterionParams->GetMinA() + fMuonCriterionParams->GetMaxA())/2;
+    GetX0Y0(xinit, yinit, thetainit, phiinit);
+  }
+  if (fInitials_type == 0) {
+    // plane wave algorithm launches in any case
+    BSecInteraction * sec = PlaneWaveSingleMuonDirectionReconstruction();
+	
+	if(!sec) {
+		// degenerated case. So use other zero approximation for zenith. There is no zero approximation for azimuth at the moment
+		thetainit = (fMuonCriterionParams->GetMaxA() + fMuonCriterionParams->GetMinA())/2;
+		phiinit = 0;
+	}
+	else {
+		// main case of zero approximation
+		fZeroSecInteraction->SetPolarAngle(sec->GetPolarAngle());
+		fZeroSecInteraction->SetAzimuthAngle(sec->GetAzimuthAngle());
+		fZeroSecInteraction->SetReadyToSave();
+		delete sec;
+		phiinit = fZeroSecInteraction->GetAzimuthAngle();
+		thetainit = fZeroSecInteraction->GetPolarAngle()+0.54;
+		if(fVerbose) {
+			cout << "sec->GetPolarAngle() = " << sec->GetPolarAngle() << " sec->GetAzimuthAngle() = " << sec->GetAzimuthAngle() << endl;
+		}
+	}
+		
+    GetX0Y0(xinit, yinit, thetainit, phiinit); // zero approximation for X0 and Y0
+    
+    //fRecParameters->SetMinLimit(5, fMuonCriterionParams->GetMinA());
+    //fRecParameters->SetMaxLimit(5, fMuonCriterionParams->GetMaxA());
+  }
+
+  /*if (fInitials_type == 1) {
+    if (fEventSource) {
+    double x_shift(0), y_shift(0), z_shift(0);
+    for(int i = 0; i < (int)fGeomTel->GetNumOMs(); i++) {
+    x_shift += fGeomTel->At(i)->GetX();
+    y_shift += fGeomTel->At(i)->GetY();
+    z_shift += fGeomTel->At(i)->GetZ();
+    }
+    x_shift = x_shift / fGeomTel->GetNumOMs();
+    y_shift = y_shift / fGeomTel->GetNumOMs();
+    z_shift = z_shift / fGeomTel->GetNumOMs();
+
+    int muonnum = -1;
+    for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse *imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    if(muonnum != -1) { // it happens when there are no impulses from muon or cascade
+    //thetainit = fEventSource->GetMuonTrack(muonnum - 1)->GetPolarAngle() + 60*3.1416/180;
+    thetainit = fEventSource->GetMuonTrack(muonnum - 1)->GetPolarAngle();
+    //thetainit = (fMuonCriterionParams->GetMinA() + fMuonCriterionParams->GetMaxA())/2;
+    //phiinit = fEventSource->GetMuonTrack(muonnum - 1)->GetAzimuthAngle() + 60*3.1416/180;
+    phiinit = fEventSource->GetMuonTrack(muonnum - 1)->GetAzimuthAngle();
+    //xinit = fEventSource->GetMuonTrack(muonnum - 1)->DefineX0(x_shift, y_shift, z_shift);
+    //yinit = fEventSource->GetMuonTrack(muonnum - 1)->DefineY0(x_shift, y_shift, z_shift);
+    GetX0Y0(xinit, yinit, thetainit, phiinit);
+    }
+    }
+    else {
+    * fLog << err << "Cannot find " << AddSerialNumber("MCEventSource") << endl;
+    }
+    }*/
+  // for(int ix = 0; ix <= xn; ix++) {
+  //   double x = xmin + ix * xstep;
+  //   for(int iy = 0; iy <= yn; iy++) {
+  //     double y = ymin + iy * ystep;
+  //     //for(int iphi = 0; iphi < phin; iphi++) {
+    //     //double phi = phimin + iphi * phistep;
+  //     double phi = 0;
+  //     for(int itheta = 0; itheta < thetan; itheta++) {
+  //       double theta = thetamin + itheta * thetastep;
+  //       double r[] = { x, y, 0, 0, phi, theta };
+  //       double chi = Chi2(r);
+
+  //       if(chi < chimin) {
+  //         chimin = chi;
+  //         xinit = x;
+  //         yinit = y;
+  //         phiinit = phi;
+  //         thetainit = theta;
+  //       }
+  //     }
+  //     //}
+  //   }
+  // }
+  
+  if(fVerbose) {
+	  cout << "xinit = " << xinit << " yinit = " << yinit << " phiinit = " << phiinit << " thetainit = " << thetainit << endl;
+  }
+
+  fRecParameters->SetInitial(0, xinit);
+  fRecParameters->SetInitial(1, yinit);
+  fRecParameters->SetInitial(4, phiinit);
+  fRecParameters->SetInitial(5, thetainit);
+}
+
+//______________________________________________________________________
+BSecInteraction* BReconstruct::ZeroRecAnalytic() const {
+  // algoritm moved 'as is' from fortran subroutine zero_rec (file: fitting_gvd_z0.f)
+
+  //const Double_t xpow = 1;
+
+  Double_t sa  = 0;
+  Double_t st  = 0;
+  Double_t sx  = 0;
+  Double_t sy  = 0;
+  Double_t sz  = 0;
+  Double_t stt = 0;
+  Double_t sxt = 0;
+  Double_t syt = 0;
+  Double_t szt = 0;
+  Double_t vx = 0;
+  Double_t vy = 0;
+  Double_t vz = 0;
+
+  int nchcuri = -1;
+  int nchcurj = -1;
+
+  for(Int_t i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse * impi = fEvent->GetImpulse(i);
+    Int_t nchi = impi->GetChannelID();
+    BChannelMask::EMode chflagi = fChannelMask->GetFlag(nchi);
+    Int_t impflagi = fEventMask->GetOrigin(i)->GetFlag();
+
+    if(nchi != nchcuri &&  impflagi == 1 && (chflagi == BChannelMask::kOn || chflagi == BChannelMask::kBadChargeCalib)) {
+      //Double_t wi   = 1.** xpow;
+      Double_t wi   = 1;
+
+      Double_t xi = fGeomTel->At(nchi)->GetX();
+      Double_t yi = fGeomTel->At(nchi)->GetY();
+      Double_t zi = fGeomTel->At(nchi)->GetZ();
+      Double_t ti = impi->GetTime();
+
+      sx += wi * xi;
+      sy += wi * yi;
+      sz += wi * zi;
+      sa += wi;
+      st += wi * ti;
+
+      for(Int_t j = 0; j < fEvent->GetTotImpulses(); j++) {
+        if (j == i) {
+          continue;
+        }
+
+        BImpulse * impj = fEvent->GetImpulse(j);
+        Int_t nchj = impj->GetChannelID();
+        BChannelMask::EMode chflagj = fChannelMask->GetFlag(nchj);
+        Int_t impflagj = fEventMask->GetOrigin(j)->GetFlag();
+
+        if(nchj != nchcurj &&  impflagj == 1 && (chflagj == BChannelMask::kOn || chflagj == BChannelMask::kBadChargeCalib)) {
+          //Double_t wj   = 1.** xpow;
+          Double_t wj   = 1;
+          Double_t xj   = fGeomTel->At(nchj)->GetX();
+          Double_t yj   = fGeomTel->At(nchj)->GetY();
+          Double_t zj   = fGeomTel->At(nchj)->GetZ();
+          Double_t tj   = impj->GetTime();
+          Double_t dt   = ti - tj;
+          //Double_t wtij = wi * wj * dt;
+
+          stt += wi * wj * dt * dt;
+          sxt += wi * wj * (xi * (tj * tj - ti * tj) + xj * (ti * ti - ti * tj));
+          syt += wi * wj * (yi * (tj * tj - ti * tj) + yj * (ti * ti - ti * tj));
+          szt += wi * wj * (zi * (tj * tj - ti * tj) + zj * (ti * ti - ti * tj));
+          vx  += wi * wj * (xi - xj) * dt;
+          vy  += wi * wj * (yi - yj) * dt;
+          vz  += wi * wj * (zi - zj) * dt;
+
+          nchcurj = impj->GetChannelID();
+        }
+      }
+
+      nchcuri = impi->GetChannelID();
+    }
+  }
+
+  vx /= stt;
+  vy /= stt;
+  vz /= stt;
+
+  Double_t v_zero = TMath::Sqrt(vx * vx + vy * vy + vz * vz);
+
+  if(fVerbose) {
+    cout << "BReconstruct::ZeroRec():" << endl;
+    cout << "v_zero = " << v_zero << endl;
+  }
+
+  Double_t x0g = sxt / stt;
+  Double_t y0g = syt / stt;
+  Double_t z0g = szt / stt;
+  Double_t t0  = st  / sa;
+  Double_t dcx = vx / v_zero;
+  Double_t dcy = vy / v_zero;
+  Double_t dcz = vz / v_zero;
+
+  //transform from point (t=0) to (t=t0)
+
+  x0g += vx * t0;
+  y0g += vy * t0;
+  z0g += vz * t0;
+
+  if(fVerbose) {
+    cout << "x0g = " << x0g << endl;
+    cout << "y0g = " << y0g << endl;
+    cout << "z0g = " << z0g << endl;
+  }
+
+  Double_t t_zero = t0;
+
+  Double_t theta, phi;
+  Tauinv(dcx, dcy, dcz, theta, phi);
+
+  Double_t theta_zero = 180. - theta;
+  Double_t phi_zero = phi - 180.;
+
+  Double_t t1, t2, f1, f2;
+  To_cos(theta_zero, phi_zero, t1, t2, f1, f2);
+
+  // for the comparision with multiple zero approximation
+
+  Double_t t11 = t1 * f1;
+  Double_t t21 = t1 * f2;
+  Double_t t31 = -t2;
+  Double_t t12 = -f2;
+  Double_t t22 = f1;
+  Double_t t32 = 0;
+  //Double_t t13 = t2 * f1;
+  //Double_t t23 = t2 * f2;
+  //Double_t t33 = t1;
+
+  Double_t x_zero = x0g * t11 + y0g * t21 + z0g * t31;
+  Double_t y_zero = x0g * t12 + y0g * t22 + z0g * t32;
+
+  if(fVerbose) {
+    cout << "guess:    x,y,z = " << x_zero << " " << y_zero;
+    cout << "      the,phi,t = " << theta_zero << " " << phi_zero << " " << t_zero << endl;
+  }
+
+  BSecInteraction * sec = new BSecInteraction();
+  sec->SetX(x_zero);
+  sec->SetY(y_zero);
+  sec->SetPolarAngle(theta_zero * TMath::Pi()/180);
+  sec->SetAzimuthAngle(phi_zero * TMath::Pi()/180);
+  sec->SetTime(t_zero);
+
+  return sec;
+}
+
+
+//____________________________________________________________________________________________________
+void BReconstruct::Tauinv(Double_t txf, Double_t tyf, Double_t tzf, Double_t & theta, Double_t & phi) const {
+  //inverse function of tau
+
+  const Double_t grad = TMath::RadToDeg();
+
+  theta = TMath::ACos(tzf);
+
+  if(txf == 0) {
+    phi = TMath::PiOver2();
+  }
+  else {
+    phi = TMath::ATan2(tyf, txf);
+  }
+
+  if (tyf < 0) {
+    phi = phi + 2 * TMath::Pi();
+  }
+
+  phi *= grad;
+  theta *= grad;
+
+  return;
+}
+
+//___________________________________________________________________________________________________________
+void BReconstruct::To_cos(Double_t the, Double_t phi, Double_t & t1, Double_t & t2, Double_t & f1, Double_t & f2) const {
+  const Double_t grad = TMath::RadToDeg();
+
+  Double_t thet = the / grad;
+  Double_t phit = phi / grad;
+
+  t1 = TMath::Cos(thet);
+  t2 = TMath::Sin(thet);
+  f1 = TMath::Cos(phit);
+  f2 = TMath::Sin(phit);
+
+  return;
+}
+
+//___________________________________________________________________________________________________________
+////////////////////////////////////////////////////////////////////////////////
+// The idea of plane wave model direction reconstruction algorithm is to define
+// components of plane's normal vector from a system of equations:
+// c*dt1 == nx*dx1 + ny*dy1 + nz*dz1 &&
+// c*dt2 == nx*dx2 + ny*dy2 + nz*dz2 &&
+// nx*nx + ny*ny + nz*nz == 1,
+// where dti is the time difference for i-th pair of channels and the same
+// notations for coordinates are used. This system has two sets of solutions:
+// {{nx1, ny1, nz1}, {nx2, ny2, nz2}}.
+// The algorithm takes all sets of pairs of channel pairs and for each pair
+// finds a solution. From all the solutions it picks the one that gives the
+// minimum absolute value for difference vec(n)*vec(dr3) - c*dt3, where
+// parameters of a third pair, which gives the minimum of the difference for a
+// particular set of two pairs, are used.
+////////////////////////////////////////////////////////////////////////////////
+
+BSecInteraction * BReconstruct::PlaneWaveSingleMuonDirectionReconstruction() {
+  int previous_channel_i = -1;
+  int previous_channel_j = -1;
+  vector<pair> set_of_pairs;
+  for (int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    int impulse_flag_i = fEventMask->GetOrigin(i)->GetFlag();
+    if (!impulse_flag_i) continue;
+    BImpulse * impulse_i = fEvent->GetImpulse(i);
+    int channel_i = impulse_i->GetChannelID();
+    if (channel_i == previous_channel_i) continue;
+    BChannelMask::EMode channel_flag_i = fChannelMask->GetFlag(channel_i);
+    if (channel_flag_i != BChannelMask::kOn
+        && channel_flag_i != BChannelMask::kBadChargeCalib) continue;
+    pair a_pair;
+    for (int j = i + 1; j < fEvent->GetTotImpulses(); j++) {
+      int impulse_flag_j = fEventMask->GetOrigin(j)->GetFlag();
+      if (impulse_flag_j != 1) continue;
+      BImpulse * impulse_j = fEvent->GetImpulse(j);
+      int channel_j = impulse_j->GetChannelID();
+      if (channel_j == previous_channel_j) continue;
+      BChannelMask::EMode channel_flag_j = fChannelMask->GetFlag(channel_j);
+      if (channel_flag_j != BChannelMask::kOn
+          && channel_flag_j != BChannelMask::kBadChargeCalib) continue;
+      if (channel_j == channel_i) continue;
+      a_pair.first = i;
+      a_pair.second = j;
+      set_of_pairs.push_back(a_pair);
+      previous_channel_j = channel_j;
+      previous_channel_i = channel_i;
+    }
+  }
+  int need = 2;
+  if ((int)set_of_pairs.size() < need) return NULL;
+  const double max_double = std::numeric_limits<double>::max();
+  double parameters [] = {max_double, 0, 0, 0};
+  Combinations(set_of_pairs.size(), need, 0, 0, set_of_pairs, parameters);
+  // if (parameters[0] == max_double) {
+  //   cout << "\nNew Event\n";
+  //   for (int i = 0; i < fEvent->GetTotImpulses(); i++) {
+  //     if( fEventMask->GetOrigin(i)->GetFlag() != 1) continue;
+  //     BImpulse * impulse = fEvent->GetImpulse(i);
+  //     int ch_id = impulse->GetChannelID();
+  //     BGeom * channel = fGeomTel->At(ch_id);
+  //     double x = channel->GetX();
+  //     double y = channel->GetY();
+  //     double z = channel->GetZ();
+  //     double t = impulse->GetTime();
+  //     cout << i << ":\t" << ch_id << '\t' << x << '\t' << y << '\t' << z << '\t'
+  //          << t << endl;
+  //   }
+  //   int count;
+  //   for (auto &p: set_of_pairs)
+  //     cout << "pair " << ++count << '\t' << p.first << '\t' << p.second << endl;
+  //   parameters[0] = e10d;
+  //   Combinations(set_of_pairs.size(), need, 0, 0, set_of_pairs, parameters);
+  //   cin >> count;
+  // }
+  if (parameters[0] == max_double) return NULL;
+  assert(parameters[3] <= 1);
+  BSecInteraction * sec = new BSecInteraction();
+  sec->SetPolarAngle(acos(parameters[3]));
+  double phi = atan(parameters[2]/parameters[1]);
+  if (parameters[1] > 0) {
+    if (parameters[2] < 0) phi += 2*M_PI;
+  }
+  else phi += M_PI;
+  sec->SetAzimuthAngle(phi);
+  return sec;
+}
+
+//______________________________________________________________________________
+void BReconstruct::Combinations(int pool, int need, unsigned long chosen,
+                                int at, vector<pair> & set_of_pairs,
+                                double * parameters) {
+  if (pool < need + at) return;
+  unsigned long one = 1;
+  double zero = 1e-15;
+  if (!need) {
+    vector<int> chosen_pairs;
+    vector<double> dt;
+    vector<double> dx;
+    vector<double> dy;
+    vector<double> dz;
+    for (at = 0; at < pool; at++)
+      if (chosen & (one << at)) {
+        BImpulse * first_impulse = fEvent->GetImpulse(set_of_pairs[at].first);
+        BImpulse * second_impulse = fEvent->GetImpulse(set_of_pairs[at].second);
+        double t1 = first_impulse->GetTime();
+        double t2 = second_impulse->GetTime();
+        dt.push_back((t1-t2) * fGeomTel->GetVelocityVacuum());
+        BGeom * channel_firts = fGeomTel->At(first_impulse->GetChannelID());
+        BGeom * channel_second = fGeomTel->At(second_impulse->GetChannelID());
+        dx.push_back(channel_firts->GetX() - channel_second->GetX());
+        dy.push_back(channel_firts->GetY() - channel_second->GetY());
+        dz.push_back(channel_firts->GetZ() - channel_second->GetZ());
+        chosen_pairs.push_back(at);
+      }
+    double dxy = dx[0]*dy[1] - dx[1]*dy[0];
+    double dxz = dx[0]*dz[1] - dx[1]*dz[0];
+    double dzy = dz[0]*dy[1] - dz[1]*dy[0];
+    double dty = dt[0]*dy[1] - dt[1]*dy[0];
+    double dxt = dx[0]*dt[1] - dx[1]*dt[0];
+    double dzt = dz[0]*dt[1] - dz[1]*dt[0];
+    double Dxy = 2*dty*dxt*dxz*dzy - dty*dty*(dxy*dxy + dxz*dxz)
+      - dxt*dxt*(dxy*dxy + dzy*dzy) + dxy*dxy*(dxy*dxy + dxz*dxz + dzy*dzy);
+    double Dzy = - 2*dty*dzt*dxz*dxy - dty*dty*(dzy*dzy + dxz*dxz)
+      - dzt*dzt*(dzy*dzy + dxy*dxy) + dzy*dzy*(dzy*dzy + dxz*dxz + dxy*dxy);
+    double Dxz = 2*dzt*dxt*dxy*dzy - dzt*dzt*(dxz*dxz + dxy*dxy)
+      - dxt*dxt*(dxz*dxz + dzy*dzy) + dxz*dxz*(dxz*dxz + dxy*dxy + dzy*dzy);
+    const int two = 2;
+    double nx[two], ny[two], nz[two];
+    double denominator = dxy*dxy + dxz*dxz + dzy*dzy;
+    if ((abs(dxy) > zero) && (Dxy >= 0)) {
+      double a = dxt*dxz + dty*dzy;
+      nz[0] = (a - sqrt(Dxy)) / denominator;
+      nz[1] = (a + sqrt(Dxy)) / denominator;
+      for (int i=0; i<two; i++) {
+        nx[i] = (dty - dzy*nz[i]) / dxy;
+        ny[i] = (dxt - dxz*nz[i]) / dxy;
+      }
+    }
+    else if ((abs(dxz) > zero) && (Dxz >= 0)) {
+      double a = dxt*dxy + dzt*dzy;
+      ny[0] = (a - sqrt(Dxz)) / denominator;
+      ny[1] = (a + sqrt(Dxz)) / denominator;
+      for (int i=0; i<two; i++) {
+        nx[i] = (- dzt + dzy*ny[i]) / dxz;
+        nz[i] = (dxt - dxy*ny[i]) / dxz;
+      }
+    }
+    else if ((abs(dzy) > zero) && (Dzy >= 0)) {
+      double a = dty*dxy - dzt*dxz;
+      nx[0] = (a - sqrt(Dzy)) / denominator;
+      nx[1] = (a + sqrt(Dzy)) / denominator;
+      for (int i=0; i<two; i++) {
+        ny[i] = (dzt + dxz*nx[i]) / dzy;
+        nz[i] = (dty - dxy*nx[i]) / dzy;
+      }
+    }
+    else return;
+    for (int i=0; i<(int)set_of_pairs.size(); i++) {
+      if (i == chosen_pairs[0] || i == chosen_pairs[1]) continue;
+      BImpulse * first_impulse = fEvent->GetImpulse(set_of_pairs[i].first);
+      BImpulse * second_impulse = fEvent->GetImpulse(set_of_pairs[i].second);
+      double t1 = first_impulse->GetTime();
+      double t2 = second_impulse->GetTime();
+      double dt_third = (t1-t2) * fGeomTel->GetVelocityVacuum();
+      BGeom * channel_firts = fGeomTel->At(first_impulse->GetChannelID());
+      BGeom * channel_second = fGeomTel->At(second_impulse->GetChannelID());
+      double dx_third = channel_firts->GetX() - channel_second->GetX();
+      double dy_third = channel_firts->GetY() - channel_second->GetY();
+      double dz_third = channel_firts->GetZ() - channel_second->GetZ();
+      double res [two];
+      for (int j=0; j<two; j++) {
+        res[j] = abs(nx[j]*dx_third + ny[j]*dy_third + nz[j]*dz_third - dt_third);
+        if (res[j] < parameters[0]) {
+          parameters[0] = res[j];
+          parameters[1] = nx[j];
+          parameters[2] = ny[j];
+          parameters[3] = nz[j];
+        }
+      }
+    }
+    return;
+  }
+  Combinations(pool, need-1, chosen | (one<<at), at+1, set_of_pairs, parameters);
+  Combinations(pool, need, chosen, at+1, set_of_pairs, parameters);
+}
+
+//___________________________________________________________________________________________________________
+void BReconstruct::GetX0Y0(Double_t &x0, Double_t &y0, Double_t theta, Double_t phi) const
+{
+  // zero approximation for x0, y0 if theta and phi have already been defined
+
+  x0 = 0;
+  y0 = 0;
+  int n = 0;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse * imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
+      Double_t xom = fGeomTel->At(nch)->GetX() - fXshift;
+      Double_t yom = fGeomTel->At(nch)->GetY() - fYshift;
+      Double_t zom = fGeomTel->At(nch)->GetZ() - fZshift;
+
+      BMuon muon;
+      Double_t p[6];
+      p[0] = xom;
+      p[1] = yom;
+      p[2] = zom;
+      p[3] = 0;
+      p[4] = phi;
+      p[5] = theta;
+      muon.SetParameters(p);
+
+      x0 += muon.DefineX0(0, 0, 0);
+      y0 += muon.DefineY0(0, 0, 0);
+      n++;
+    }
+  }
+  x0 /= n;
+  y0 /= n;
+}

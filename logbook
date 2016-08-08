@@ -1,0 +1,16 @@
+08.08.16
+
+Start development of timing calibrtation based on reconstructed muons (Fedor, Bair).
+The following calibration algorithm should be used for particular channel:
+
+1). Exclude channel from reconstruction.
+
+2). Process full dataset and reconstruct muon tracks.
+
+3). Select subset of tracks propagating in the vicinity of the given channel. This can be done by applying cut on distance from channel to track.
+
+4). Extrapolate the time of hit from timing of hit in each of channels used in the reconstruction. Obtain average. Or use reconstructed timing of track (if exists).
+
+5). Obtain actual timing of hit in the given channel. Calculate difference to extrapolated time. Obtain distribution of difference for the whole set of selected tracks.
+
+6). Calculate the correction.
