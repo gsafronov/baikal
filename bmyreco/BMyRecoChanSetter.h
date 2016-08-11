@@ -1,9 +1,9 @@
-#ifndef BARS_BMyRecoReco
-#define BARS_BMyRecoReco
+#ifndef BARS_BMyRecoChanSetter
+#define BARS_BMyRecoChanSetter
 
 /////////////////////////////////////////////////////////////////////////////
 //                                                                         //
-// BMyRecoReco
+// BMyRecoChanSetter
 //                                                                         //
 //                                                                         //
 /////////////////////////////////////////////////////////////////////////////
@@ -12,9 +12,6 @@
 #include "MTask.h"
 #endif
 
-class TFile;
-class TH1F;
-class TH2F;
 class TProfile;
 class BEvent;
 class BMCEvent;
@@ -29,20 +26,10 @@ class BRecParameters;
 
 
 
-class BMyRecoReco : public MTask
+class BMyRecoChanSetter : public MTask
 {
  protected:
-  BEvent *     fEvent;             //! Generic event
-  BMCEvent*    fMCEvent;
-  BEventMask * fEventMask;         //! EventMask
-  BGeomTel *   fGeomTel;           //! Geometry information
-  BExtractedImpulseTel* fExtractedImpulse;
-  BJoinExtractedImpulseTel* fJoinExtractedImpulse;
-  BExtractedHeader* fExtractedHeader;
-  BJoinExtractedHeader* fJoinExtractedHeader;
-  BRecParameters *    fRecParam;              //!
   BChannelMask *      fChannelMask;   //!
-  //  BSecInteraction *   fZeroSecInteraction;
   
   // MTask
   virtual Int_t   PreProcess(MParList * pList);
@@ -50,18 +37,13 @@ class BMyRecoReco : public MTask
   virtual Int_t   PostProcess();
   
  public:
-  BMyRecoReco(string fname, bool useMC);
-  ~BMyRecoReco();
+  BMyRecoChanSetter(int ch);
+  ~BMyRecoChanSetter();
   
  private:
-  //counter
-  int iEvent;
-  float cWater;
-  float cVacuum;
+  int chanID;
 
-  TFile* fOUT;
-
-  ClassDef(BMyRecoReco, 0);
+  ClassDef(BMyRecoChanSetter, 0);
 };
     
 #endif

@@ -50,7 +50,7 @@ class BMyRecoReco : public MTask
   virtual Int_t   PostProcess();
   
  public:
-  BMyRecoReco(string fname, bool useMC);
+  BMyRecoReco(string fname, int cChan, bool useMC);
   ~BMyRecoReco();
   
  private:
@@ -60,7 +60,12 @@ class BMyRecoReco : public MTask
   float cVacuum;
 
   TFile* fOUT;
-
+  TH1F* hTimeDiff;
+  
+  float getTrackDistanceToOM(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> xyzOM);
+  float getTimeEstimate_ns(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> pointInSpace);
+  int calibChanID;
+  
   ClassDef(BMyRecoReco, 0);
 };
     

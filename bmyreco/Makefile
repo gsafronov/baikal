@@ -24,7 +24,8 @@ INCLUDES = -I. -I../mbase -I../mfileio -I../bgeom -I../bextractevent -I../bfilte
 SRCFILES = 	BMyReco.cc \
 		BMyRecoMC.cc \
 		BMyRecoBEvt.cc \
-		BMyRecoReco.cc
+		BMyRecoReco.cc \
+		BMyRecoChanSetter.cc
 ############################################################
 
 all: $(OBJS)

@@ -36,8 +36,6 @@
 #include <map>
 #include <limits>
 #include <assert.h>
-#include "TH2F.h"
-#include "TFile.h"
 
 ClassImp(BReconstruct);
 
@@ -60,11 +58,6 @@ BReconstruct::BReconstruct(const char * name, const char * title)
   fNchIsRes = -1;
 
   fEventMaskName = "";
-
-  std::cout<<"call BReconstruct"<<std::endl;
-  
-  fou=new TFile("timeCalibMonitor.root","RECREATE");
-  hMapOfUsedOM=new TH2F("hMapOfUsedOM","hMapOfUsedOM",10,0,10,25,0,25);
 }
 
 //
@@ -140,12 +133,10 @@ Int_t BReconstruct::PreProcess(MParList * pList) {
     fMinimizer->SetPrintLevel(-2);
   }
 
+
   fFunctor = new ROOT::Math::Functor(this, & BReconstruct::Chi2, 6);
   fMinimizer->SetFunction(* fFunctor);
 
-  //  fou=new TFile("OUT/timeCalibMonitor.root","RECREATE");
-  //  hMapOfUsedOM=new TH2F("hMapOfUsedOM","hMapOfUsedOM",10,0,10,25,0,25);
-  
   return kTRUE;
 }
 
@@ -183,10 +174,6 @@ Int_t BReconstruct::Process()
 //
 //
 Int_t BReconstruct::PostProcess() {
-  std::cout<<"BReconstruct postprocess"<<std::endl;
-  fou->cd();
-  hMapOfUsedOM->Write();
-  fou->Close();
   return kTRUE;
 }
 
@@ -501,11 +488,6 @@ Int_t BReconstruct::Minimize() {
 //
 //
 BReconstruct::~BReconstruct() {
-  std::cout<<"BReconstruct destructor"<<std::endl;
-  fou->cd();
-  hMapOfUsedOM->Write();
-  fou->Close();
-  //  return kTRUE;
   if(fFunctor) {
     delete fFunctor;
   }
@@ -1106,10 +1088,6 @@ void BReconstruct::GetX0Y0(Double_t &x0, Double_t &y0, Double_t theta, Double_t 
     BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
 
     if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
-
-      //      std::cout<<"fufufufu,    nch: "<<nch<<std::endl;
-      hMapOfUsedOM->Fill(floor((nch)/24),(nch)%24+1,1);
-      //std::cout<<"bloblo"<<std::endl;
       Double_t xom = fGeomTel->At(nch)->GetX() - fXshift;
       Double_t yom = fGeomTel->At(nch)->GetY() - fYshift;
       Double_t zom = fGeomTel->At(nch)->GetZ() - fZshift;

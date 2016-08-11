@@ -35,6 +35,7 @@ extern void G__set_cpp_environmentBMyRecCint();
 #include "BMyRecoMC.h"
 #include "BMyRecoBEvt.h"
 #include "BMyRecoReco.h"
+#include "BMyRecoChanSetter.h"
 #include "BMyRecIncl.h"
 #include <algorithm>
 namespace std { }
@@ -79,5 +80,6 @@ extern G__linked_taginfo G__BMyRecCintLN_BMyRecoMC;
 extern G__linked_taginfo G__BMyRecCintLN_BMyRecoBEvt;
 extern G__linked_taginfo G__BMyRecCintLN_BRecParameters;
 extern G__linked_taginfo G__BMyRecCintLN_BMyRecoReco;
+extern G__linked_taginfo G__BMyRecCintLN_BMyRecoChanSetter;
 
 /* STUB derived class for protected member access */

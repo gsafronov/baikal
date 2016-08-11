@@ -44,8 +44,8 @@ BReconstructMuon::BReconstructMuon(const char *name, const char *title)
   fQ10Filename = "../config/quant10HE.data";
   fHitProbabilityCriterionFlag = false;
 
-  fou=new TFile("recoMonitor.root","RECREATE");
-  hMapOfUsedOM=new TH2F("hMapOfUsedOM","hMapOfUsedOM",10,0,10,25,0,25);
+  //  fou=new TFile("recoMonitor.root","RECREATE");
+  //  hMapOfUsedOM=new TH2F("hMapOfUsedOM","hMapOfUsedOM",10,0,10,25,0,25);
 }
 
 //______________________________________________________________________
@@ -54,10 +54,10 @@ BReconstructMuon::BReconstructMuon(const char *name, const char *title)
 //
 Int_t BReconstructMuon::PostProcess()
 {
-  fou->cd();
-  hMapOfUsedOM->Write();
-  fou->Close();    
-  return 1;
+  //  fou->cd();
+  //  hMapOfUsedOM->Write();
+  //  fou->Close();    
+  //  return 1;
 }
 
 
@@ -175,7 +175,7 @@ Int_t BReconstructMuon::PreProcess(MParList *pList)
 //______________________________________________________________________
 Int_t BReconstructMuon::Process()
 {
-  std::cout<<"fff"<<std::endl;
+  //  std::cout<<"fff"<<std::endl;
   BReconstruct::Process();
 
   if (!fHitProbabilityCriterionFlag) return kTRUE;
@@ -191,16 +191,16 @@ int BReconstructMuon::HitProbabilityCriterion() {
   const double kCAngle = fGeomTel->GetCherenkovAngle();
 
   std::vector<int> OMs;
-  std::cout<<"hit probability..."<<std::endl;
+  //  std::cout<<"hit probability..."<<std::endl;
   for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
     int nch = fEvent->GetImpulse(i)->GetChannelID();
     BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
-    std::cout<<"yoyo"<<std::endl;
+    //    std::cout<<"yoyo"<<std::endl;
     if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
       if (std::find(OMs.begin(), OMs.end(), nch) == OMs.end()) {
 	OMs.push_back(nch);
-	std::cout<<"bloblo"<<std::endl;
-	hMapOfUsedOM->Fill(floor(nch/24),(nch)%24+1,1);
+	//	std::cout<<"bloblo"<<std::endl;
+	//	hMapOfUsedOM->Fill(floor(nch/24),(nch)%24+1,1);
       }
     }
   }

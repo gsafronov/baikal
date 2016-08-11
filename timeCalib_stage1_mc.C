@@ -25,7 +25,7 @@
 #include "BReadMCGeomWout.h"
 */
 
-void timeCalib_stage1_mc(string mc_infile="/data/mc/cors6.wout", string root_infile="OUT/cors6_amp3_caus50_type3_muon_crit_rec_off52.root", int calibChanID, Bool_t isrec = kTRUE)
+void timeCalib_stage1_mc(string mc_infile="/home/local/work/baikal/data/cors8.wout", string root_infile="OUT/timeCalibTest.root", int calibChanID=10, Bool_t isrec = kTRUE)
 {
   // Script is used to get MC events after filtrations (amplitude, causality, muon) or even more after muon reconstruction
   //
@@ -70,10 +70,14 @@ void timeCalib_stage1_mc(string mc_infile="/data/mc/cors6.wout", string root_inf
   TString config_path = "../config/";
   BChannelMaskApply chmask;
   chmask.SetMaskFileName(config_path + "2015_channelmask_vs_e0556");
-  chmask.SetFlag(calibChanID, 2);
+  //  chmask.SetFlag(calibChanID, IsBad);
   chmask.SetVerbose(kTRUE);
 
   tasks.AddToList(&chmask);
+
+
+  BMyRecoChanSetter chSet(calibChanID);
+  tasks.AddToList(&chSet);
   
   //Unify mc-events 
   BExtractMCEventSum eventExtractor;
@@ -124,6 +128,10 @@ void timeCalib_stage1_mc(string mc_infile="/data/mc/cors6.wout", string root_inf
     tasks.AddToList(&muonrec);
     tasks.AddToList(&recqual);
   }
+
+  BMyRecoReco myrecoTest("foutMCreco.root", true, calibChanID);
+  tasks.AddToList(&myrecoTest);
+
   
   MWriteRootFile writer(root_infile.c_str(), "RECREATE", "Magic root-file", 2); 
   tasks.AddToList(&writer);
@@ -143,8 +151,9 @@ void timeCalib_stage1_mc(string mc_infile="/data/mc/cors6.wout", string root_inf
   if(isrec) {
     writer.AddContainer("BRecParameters", "Events");
   }
-  
-  //Init and run event loop
+
+
+   //Init and run event loop
   MEvtLoop eventLoop;
   eventLoop.SetParList(&plist);
   eventLoop.Eventloop();

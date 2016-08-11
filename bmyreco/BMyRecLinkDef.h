@@ -8,4 +8,5 @@
 #pragma link C++ class BMyRecoMC+;
 #pragma link C++ class BMyRecoBEvt+;
 #pragma link C++ class BMyRecoReco+;
+#pragma link C++ class BMyRecoChanSetter+;
 #endif

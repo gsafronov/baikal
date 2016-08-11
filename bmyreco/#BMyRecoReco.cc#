@@ -114,6 +114,10 @@ Int_t BMyRecoReco::Process()
   //find absolute (inside the event) time of hit in the OM of interest
   float time0=0; //time0=GetTimeRec() BUT THERE IS NO SUCH FUNCTION!!! ASK FEDOR
 
+  //
+
+
+  
   float timeOfOMHit_estimate=time0+getTimeEstimate_ns(initialPoint,trackDirection, xyzOM);
 
   //here one should look at BMCEvent or BEvent

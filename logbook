@@ -14,3 +14,15 @@ The following calibration algorithm should be used for particular channel:
 5). Obtain actual timing of hit in the given channel. Calculate difference to extrapolated time. Obtain distribution of difference for the whole set of selected tracks.
 
 6). Calculate the correction.
+
+
+
+09.08.16
+
+Realise that switching the channel off in the root macro is not possible because the mask is initialised from the txt file.
+
+How to solve this problem:
+
+1). Add another (calibration) mask before BReconstruct
+
+2). Add small class which sets calibrated channel in its preprocess which is called after BChannelMask preprocess and before BMuonReconstruct

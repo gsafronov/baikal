@@ -21,8 +21,6 @@
 
 #include <limits>
 
-class TH2F;
-class TFile;
 class BEvent;
 class BEventMask;
 class BGeomTel;
@@ -85,10 +83,6 @@ class BReconstruct : public MTask
     void GetX0Y0(Double_t &x0, Double_t &y0, Double_t theta, Double_t phi) const;
 
   public:
-    TFile* fou;
-    TH2F* hMapOfUsedOM;
-    
-    
     BReconstruct(const char * name = NULL, const char * title = NULL);
     ~BReconstruct();
 
