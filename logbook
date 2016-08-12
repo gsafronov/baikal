@@ -25,4 +25,29 @@ How to solve this problem:
 
 1). Add another (calibration) mask before BReconstruct
 
-2). Add small class which sets calibrated channel in its preprocess which is called after BChannelMask preprocess and before BMuonReconstruct
+2). Add small class which sets calibrated channel in its preprocess which is called after BChannelMask preprocess and before BMuonReconstruct. BMyRecoChanSetter class
+
+Add preliminary track propagation and time calculation for calibrated OM
+
+
+10.08.16
+Implement preliminary procedure for track propagation (with dummy track parameters).
+
+
+11.08.16
+
+Obtain track parameters
+
+1). X0,Y0 -> X,Y,Z
+
+2). Time of track from residuals
+    The following is given: fTres=Texp-Ttheor, where Texp is time of impulse and Ttheor=T0+Tprop. T0 and Tprop can be defined wrt. any point on the track. We choose some point outside of the detector preceeding interaction with the detector. T0 can be defined for a number of hits and should be similar if all calculations are correct.
+
+Nunmber of impulses used in reconstruction are not stored. Asked Fedor to add them to BRecParameters
+
+
+
+
+12.08.16
+Implement and start debugging of difference in propagated time and actual time in calibrated channel. So far too large values with large spread are obtaned.
+

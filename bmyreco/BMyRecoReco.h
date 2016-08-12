@@ -61,6 +61,7 @@ class BMyRecoReco : public MTask
 
   TFile* fOUT;
   TH1F* hTimeDiff;
+  TH1F* hDistToTrack;
   
   float getTrackDistanceToOM(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> xyzOM);
   float getTimeEstimate_ns(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> pointInSpace);

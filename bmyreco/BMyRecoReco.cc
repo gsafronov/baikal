@@ -20,6 +20,8 @@
 #include "TProfile.h"
 #include "TFile.h"
 #include "TMath.h"
+#include "TRotation.h"
+#include "TVector3.h"
 
 #include <math.h>
 #include <vector>
@@ -37,19 +39,23 @@ BMyRecoReco::BMyRecoReco(string fname, int cChan, bool useMCEvent)
   
   calibChanID=cChan;
 
-  hTimeDiff=new TH1F("hTimeDiff","hTimeDiff",10000,0,10000);
+  hTimeDiff=new TH1F("hTimeDiff","hTimeDiff",10000,-5000,5000);
+
+  hDistToTrack=new TH1F("hDistToTrack","hDistToTrack",1000,0,1000);  
 }
+
 
 BMyRecoReco::~BMyRecoReco()
 {
   fOUT->cd();
   hTimeDiff->Write();
+  hDistToTrack->Write();
   fOUT->Close();
 }
 
 Int_t BMyRecoReco::PreProcess(MParList * pList)
 {
-  std::cout<<"WE ARE IN BMyRecoBEvt::PreProcess"<<std::endl;
+  std::cout<<"WE ARE IN BMyReco Reco::PreProcess"<<std::endl;
   
   fGeomTel = (BGeomTel*)pList->FindObject(AddSerialNumber("BGeomTel"));
   if (!fGeomTel){
@@ -81,7 +87,7 @@ Int_t BMyRecoReco::Process()
   if (iEvent%10000==0) std::cout<<"eventNumber: "<<iEvent<<std::endl;
 
   //  std::cout<<fRecParam->GetNumPar()<<std::endl;
-  return kTRUE;
+  //return kTRUE;
 
   //implement track selection wrt particular OM passed in the constructor
   
@@ -91,30 +97,87 @@ Int_t BMyRecoReco::Process()
   //3). Time - problem, ask Fedor  
   
   //suppose we have distance: rTrackOM
+
+  float thetaRad=M_PI*fRecParam->GetThetaRec()/180;
+  float phiRad=M_PI*fRecParam->GetPhiRec()/180;
     
+  //transform from X0, Y0 to X,Y,Z, copy-paste from BMuonX0Y0::DefineXYZ()
+  TRotation m;
+  m.RotateY(thetaRad - M_PI);
+  m.RotateZ(phiRad);
+  
+  TVector3 R(fRecParam->GetX0Rec(), fRecParam->GetY0Rec(), 0);
+ 	
+  R = m * R;
+ 	
+  float initialX = R.X();
+  float initialY = R.Y();
+  float initialZ = R.Z();
+  /////////////////////////////////
+
   std::vector<float> initialPoint;
-  initialPoint.push_back(0);  //calculate according to 1).
-  initialPoint.push_back(0);  //calculate according to 1).
-  initialPoint.push_back(0);  //calculate according to 1).
+  initialPoint.push_back(initialX);  //calculate according to 1).
+  initialPoint.push_back(initialY);  //calculate according to 1).
+  initialPoint.push_back(initialZ);  //calculate according to 1).
 
   std::vector<float> trackDirection;
-  trackDirection.push_back(sin(fRecParam->GetThetaRec())*cos(fRecParam->GetPhiRec()));
-  trackDirection.push_back(sin(fRecParam->GetThetaRec())*sin(fRecParam->GetPhiRec()));
-  trackDirection.push_back(cos(fRecParam->GetThetaRec()));
+  std::cout<<std::setprecision(2);
+  //<<fRecParam->GetThetaRec()<<"   "<<thetaRad<<"   "<<cos(thetaRad)<<"   "<<fRecParam->GetPhiRec()<<"   "<<phiRad<<std::endl;
+  trackDirection.push_back(sin(thetaRad)*cos(phiRad));
+  trackDirection.push_back(sin(thetaRad)*sin(phiRad));
+  trackDirection.push_back(cos(thetaRad));
+
+  //  std::cout<<"track direction:  "<<trackDirection[0]<<"   "<<trackDirection[1]<<"   "<<trackDirection[2]<<std::endl;
+    
+  std::vector<float> tZeroPoint;
+  tZeroPoint.push_back(initialX-trackDirection[0]*1000);
+  tZeroPoint.push_back(initialY-trackDirection[1]*1000);
+  tZeroPoint.push_back(initialZ-trackDirection[2]*1000);
+
+  //  std::cout<<"tZeroPoint:  "<<tZeroPoint[0]<<"   "<<tZeroPoint[1]<<"   "<<tZeroPoint[2]<<std::endl;
 
   std::vector<float> xyzOM;
   xyzOM.push_back(fGeomTel->At(calibChanID)->GetX());
   xyzOM.push_back(fGeomTel->At(calibChanID)->GetY());
   xyzOM.push_back(fGeomTel->At(calibChanID)->GetZ());
 
-  float rTrackOM=getTrackDistanceToOM(initialPoint, trackDirection, xyzOM); //meters
+  float rTrackOM=getTrackDistanceToOM(tZeroPoint, trackDirection, xyzOM); //meters
 
-  if (rTrackOM>10) return kTRUE;
+  hDistToTrack->Fill(rTrackOM,1);
+  
+  if (rTrackOM>10)
+    {
+      //  std::cout<<"MISS channel 10"<<std::endl;
+      return kTRUE;
+    }
+  // std::cout<<"hit channel 10: "<<rTrackOM<<std::endl;
   
   //find absolute (inside the event) time of hit in the OM of interest
   float time0=0; //time0=GetTimeRec() BUT THERE IS NO SUCH FUNCTION!!! ASK FEDOR
 
-  float timeOfOMHit_estimate=time0+getTimeEstimate_ns(initialPoint,trackDirection, xyzOM);
+  //get time from residuals
+  
+  float T0;
+  for (int i=0; i<fRecParam->GetNhit(); i++){
+    float Tres=fRecParam->GetTres(i);
+    int nch=fRecParam->GetNchGeomMC(i);
+    std::vector<float> xyzHit;
+    xyzHit.push_back(fGeomTel->At(nch)->GetX());
+    xyzHit.push_back(fGeomTel->At(nch)->GetY());
+    xyzHit.push_back(fGeomTel->At(nch)->GetZ());
+
+    //propagationTime to hit from tZeroPoint:
+    float Tprop=getTimeEstimate_ns(tZeroPoint,trackDirection,xyzHit);
+
+    //experimental time:
+    int impID=fRecParam->GetImpulseNumber(i);
+    float Texp=fEvent->GetImpulseTime(impID);
+
+    T0=Texp-Tres-Tprop;
+    //std::cout<<"T0 from channel "<<nch<<"  and impulse "<<impID<<" :   "<<T0<<std::endl;
+  }
+  
+  float timeOfOMHit_estimate=T0+getTimeEstimate_ns(tZeroPoint,trackDirection, xyzOM);
 
   //here one should look at BMCEvent or BEvent
   //loop over hits
@@ -145,12 +208,15 @@ Int_t BMyRecoReco::PostProcess()
 //distance from track to OM
 float BMyRecoReco::getTrackDistanceToOM(std::vector<float> A, std::vector<float> a, std::vector<float> xyzOM)
 {
-  float modAOM=sqrt(pow(A[0]-xyzOM[0],1)+pow(A[1]-xyzOM[1],2)+pow(A[2]-xyzOM[2],2));
+  float modAOM=sqrt(pow(A[0]-xyzOM[0],2)+pow(A[1]-xyzOM[1],2)+pow(A[2]-xyzOM[2],2));
   float moda=sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
-  float scalarMult=sqrt((xyzOM[0]-A[0])*a[0]+(xyzOM[1]-A[1])*a[1]+(xyzOM[2]-A[2])*a[2]);
+  float scalarMult=((xyzOM[0]-A[0])*a[0]+(xyzOM[1]-A[1])*a[1]+(xyzOM[2]-A[2])*a[2]);
   float cosAlpha=scalarMult/(modAOM*moda);
-  cosAlpha=round(cosAlpha*10000)*pow(10000,-1); //rounding to avoid nan in the next line
+  cosAlpha=round(cosAlpha*10000000)*pow(10000000,-1); //rounding to avoid nan in the next line
   float dist=modAOM*sqrt(1-cosAlpha*cosAlpha);
+
+  //if (dist<10) std::cout<<modAOM<<"   "<<moda<<"   "<<scalarMult<<"   "<<cosAlpha<<"   "<<sqrt(1-cosAlpha*cosAlpha)<<"   "<<dist<<std::endl;
+  
   return dist;
 }
 
@@ -167,7 +233,7 @@ float BMyRecoReco::getTimeEstimate_ns(std::vector<float> A, std::vector<float> s
   //  std::cout<<"AM: "<<modAM<<"  s: "<<modS<<std::endl;
 
   float cosAlpha=(AM[0]*s[0]+AM[1]*s[1]+AM[2]*s[2])/(modAM*modS);
-  cosAlpha=round(cosAlpha*10000)*pow(10000,-1); //rounding to avoid nan in the next line
+  cosAlpha=round(cosAlpha*1000000)*pow(1000000,-1); //rounding to avoid nan in the next line
   float sinAlpha=sqrt(1-pow(cosAlpha,2)); 
 
   //water refraction index
