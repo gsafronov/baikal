@@ -12,33 +12,22 @@
 #endif
 
 #include "BReconstruct.h"
-#include "Math/Interpolator.h"
-
-class TH2F;
-class TFile;
 
 class BReconstructMuon : public BReconstruct
 {
  private:
-  const char* fQ10Filename;
-  bool fHitProbabilityCriterionFlag;
-  // Hit probability criterion
-  double fRho_up_lim;
-  ROOT::Math::Interpolator *fInterpolator;
   // MTask
   virtual Int_t   PreProcess(MParList *pList);
   virtual Int_t   Process();
-  virtual Int_t   PostProcess();
-  int HitProbabilityCriterion();
-  TFile* fou;
-  TH2F* hMapOfUsedOM;
-  double GetProbability(double rho, double angle, bool hit);
+  void GetX0Y0(Double_t &x0, Double_t &y0, Double_t theta, Double_t phi) const;
+  BSecInteraction * PlaneWaveSingleMuonDirectionReconstruction();
+  void Combinations(int pool, int need, unsigned long chosen, int at,
+                    vector<pair> & set_of_pairs, double * parameters);
+  int InitialValues();
+  int Chi2Fit();
 
  public:
-  void SetQ10Path(const char* path) {fQ10Filename = path;};
   BReconstructMuon(const char *name = NULL, const char *title = NULL);
-  void SetHitProbabilityCriterionFlag(bool flag=true) {
-    fHitProbabilityCriterionFlag = flag; }
 
   ClassDef(BReconstructMuon, 0) // BReconstructMuon
 };

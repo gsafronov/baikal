@@ -12,6 +12,8 @@
 
 #include "MParList.h"
 #include "TMath.h"
+#include "Math/BrentMinimizer1D.h"
+#include "Math/Functor.h"
 #include "TTimeStamp.h"
 
 #include <fstream>
@@ -24,6 +26,8 @@
 #include "BSecInteraction.h"
 #include "BRecParameters.h"
 #include "BChannelMask.h"
+#include <cassert>
+#include <cmath>
 
 ClassImp(BRecQualify);
 
@@ -41,17 +45,19 @@ BRecQualify::BRecQualify(const char *name, const char *title) :
 
   fVerbose = kFALSE;
   fNchIsRes = -1;
+  fQ10FileName = "../config/quant10HE.data";
+  fHitCriterionFlag = false;
 }
 
 //______________________________________________________________________
 Int_t BRecQualify::PreProcess(MParList *pList)
 {
   fEventSource = (BSourceEAS*)pList->FindObject("MCEventSource");
-  if (!fEventSource)
-    {
-      *fLog << err << AddSerialNumber("MCEventSource") << " not found... aborting." << endl;
-      return kFALSE;
-    }
+  // if (!fEventSource)
+  //   {
+  //     *fLog << err << AddSerialNumber("MCEventSource") << " not found... aborting." << endl;
+  //     return kFALSE;
+  //   }
 
   fEvent = (BEvent*)pList->FindObject("BEvent", "BEvent");
   if (!fEvent)
@@ -94,18 +100,65 @@ Int_t BRecQualify::PreProcess(MParList *pList)
   }
 
   fMCEventMask = (BEventMask*)pList->FindObject("MCEventMask");
-  if (!fMCEventMask)
-    {
-      *fLog << err << AddSerialNumber("MCEventMask") << " not found... aborting." << endl;
-      return kFALSE;
-    }
+  // if (!fMCEventMask)
+  //   {
+  //     *fLog << err << AddSerialNumber("MCEventMask") << " not found... aborting." << endl;
+  //     return kFALSE;
+  //   }
+
+  if (!fHitCriterionFlag) return kTRUE;
+  ifstream ifile(fQ10FileName, ios::in);
+  if (!ifile) {
+    *fLog << err << "file not found: "<< fQ10FileName << endl;
+    return kFALSE;
+  }
+  double rstep , rzero;
+  ifile >> rzero;
+  ifile >> rstep;
+  int kn1;
+  ifile >> kn1;
+  double* rrrv1 = new double[kn1];
+  double* pppv1 = new double[kn1];
+  for (int i = 0; i < kn1; i++)
+    ifile >> rrrv1[i] >> pppv1[i];
+  fInterpolator = new ROOT::Math::Interpolator(kn1, ROOT::Math::Interpolation::kAKIMA);
+  fInterpolator->SetData(kn1, rrrv1, pppv1);
+  fRhoUpLim = rrrv1[kn1-1];
+  delete[] rrrv1;
+  delete[] pppv1;
+
   return kTRUE;
 }
 
 //______________________________________________________________________
 Int_t BRecQualify::Process()
 {
-  MCResiduals();
+  fXshift = 0;
+  fYshift = 0;
+  fZshift = 0;
+
+
+  fTelLength = 0;
+  for(int i = 0; i < (int)fGeomTel->GetNumOMs(); i++) {
+    for (int j = i+1; j < (int)fGeomTel->GetNumOMs(); j++) {
+      double dist = fGeomTel->GetDistance(i,j);
+      if (dist > fTelLength) fTelLength = dist;
+    }
+    fXshift += fGeomTel->At(i)->GetX();
+    fYshift += fGeomTel->At(i)->GetY();
+    fZshift += fGeomTel->At(i)->GetZ();
+  }
+  fTelLength += 0.5;
+  fXshift = fXshift / fGeomTel->GetNumOMs();
+  fYshift = fYshift / fGeomTel->GetNumOMs();
+  fZshift = fZshift / fGeomTel->GetNumOMs();
+
+  if (fMCEventMask && fEventSource) {
+    fMuonNumber = GetLargestMuonNum();
+    MCResiduals();
+  }
+  if (fHitCriterionFlag) HitCriterion();
+  ZDist();
   //MCResidualsX0Y0();
   return kTRUE;
 }
@@ -299,48 +352,23 @@ void BRecQualify::MCResidualsX0Y0()
 //______________________________________________________________________
 void BRecQualify::MCResiduals()
 {
-  //find first impulse, passed all filters, and take its magic number
   const Double_t sigmat = 2; // temp decision
 
-  int muonnum = -1;
-  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
-    BImpulse *imp = fEvent->GetImpulse(i);
-    Int_t nch = imp->GetChannelID();
-    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
-
-    //if(fEventMask->GetOrigin(i)->GetFlag() == 1 && channelflag) {
-    if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib || nch == fNchIsRes)) {
-      int magic = fMCEventMask->GetOrigin(i)->GetFlag();
-      if(fVerbose) {
-        cout << " magic = " << magic << endl;
-      }
-      if(magic == 0) {
-        continue;
-      }
-      else if(magic < 0) { // muon case
-        muonnum = 1000 + magic;
-      }
-      else {
-        int sh = magic/1000;
-        muonnum = magic - sh * 1000;
-      }
-      break;
-    }
-  }
+  int muonnum = fMuonNumber;
 
   if(muonnum == -1) { // it happens when there are no impulses from muon or cascade
     fRecParameters->SetTresMC(0, 0, 0);
     fRecParameters->SetTimeMC(0);
-    fRecParameters->SetThetaMC(-180);
+    fRecParameters->SetThetaMC(180);
     fRecParameters->SetFuncValueMC(1000);
     fRecParameters->SetX0MC(1000);
     fRecParameters->SetY0MC(1000);
     return;
   }
 
-  BMuon *muon = fEventSource->GetMuonTrack(muonnum - 1);
+  BMuon *muon = fEventSource->GetMuonTrack(muonnum - 1); // muonnum begins from 1
   if(muon == 0) {
-    cout << "BRecQualify::MCResiduals(): very strange situation muon == 0" << endl;
+    cout << "BRecQualify::MCResiduals(): very strange situation muon == 0 muonnum = " << muonnum << endl;
     exit(1);
   }
   //if(muon == 0) { // temp dicision because of bug in magic number in MC
@@ -418,18 +446,18 @@ void BRecQualify::MCResiduals()
   double zshift = 0;
   int iii = 0;
   for(int i = 0; i < (int)fGeomTel->GetNumOMs(); i++) {
-    BChannelMask::EMode channelflag = fChannelMask->GetFlag(i);
+    //BChannelMask::EMode channelflag = fChannelMask->GetFlag(i);
 
     //if(nch != nchcuri && fEventMask->GetOrigin(i)->GetFlag() == 1 && channelflag) {
-    if(channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib || i == fNchIsRes) {
-      xshift += fGeomTel->At(i)->GetX();
-      yshift += fGeomTel->At(i)->GetY();
-      zshift += fGeomTel->At(i)->GetZ();
-      if(fVerbose) {
-        cout << i << " " << fGeomTel->At(i)->GetZ() << endl;
-      }
-      iii++;
+    //if(channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib || i == fNchIsRes) {
+    xshift += fGeomTel->At(i)->GetX();
+    yshift += fGeomTel->At(i)->GetY();
+    zshift += fGeomTel->At(i)->GetZ();
+    if(fVerbose) {
+      cout << i << " " << fGeomTel->At(i)->GetZ() << endl;
     }
+    iii++;
+    //}
   }
   if(iii != 0) {
     xshift /= iii;
@@ -490,4 +518,306 @@ void BRecQualify::MCResiduals()
   delete [] Ttheor;
   delete [] Texp;
   delete [] nchgeom;
+}
+
+//______________________________________________________________________________
+double BRecQualify::GetP(double energy) {
+  std::vector<int> OMs;
+  double hit_p = 1.;
+  double no_hit_p = 1.;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    int nch = fEvent->GetImpulse(i)->GetChannelID();
+    if (!fChannelMask->GetFlag(nch)) continue;
+    if (std::find(OMs.begin(), OMs.end(), nch) == OMs.end()) OMs.push_back(nch);
+  }
+  const double kCAngle = fGeomTel->GetCherenkovAngle();
+  //angle between PMT and opposite direction of Cherenkov light
+  double angle_below, angle_above;
+  if (fTheta < kCAngle) angle_below = kCAngle - fTheta;
+  else angle_below = fTheta - kCAngle;
+  if (fTheta < M_PI - kCAngle) angle_above = fTheta + kCAngle;
+  else angle_above = 2*M_PI - fTheta - kCAngle;
+  int num_of_OMs = 0;
+  int count = 0;
+  for(int i = 0; i < (int)fGeomTel->GetNumOMs(); i++) {
+    if (!fChannelMask->GetFlag(i)) continue;
+    num_of_OMs++;
+    double xOM = fGeomTel->At(i)->GetX() - fXshift;
+    double yOM = fGeomTel->At(i)->GetY() - fYshift;
+    double zOM = fGeomTel->At(i)->GetZ() - fZshift;
+    double x(fX - xOM), y(fY - yOM), z(fZ - zOM);
+    // z coordinate of trajectory (or it's projection on a plane parallel to OM
+    // axis) and OM axis intersection
+    double b;
+    if (fTheta == 0 || fTheta == M_PI) b = zOM;
+    else b = fZ - x*cos(fPhi)*cos(fTheta)/sin(fTheta)
+           - y*sin(fPhi)*cos(fTheta)/sin(fTheta);
+    // distance between OM and trajectory
+    double rho = sqrt(pow(x*cos(fTheta) - z*cos(fPhi)*sin(fTheta), 2)
+                      + pow(sin(fTheta), 2)*pow(y*cos(fPhi) - x*sin(fPhi), 2)
+                      + pow(y*cos(fTheta) - z*sin(fTheta)*sin(fPhi), 2));
+    double angle;
+    if (b < zOM) angle = angle_below;
+    else angle = angle_above;
+    double pv;
+    // cout << scientific << rho << '\t' << energy << '\t' << angle << '\n';
+    if (std::find(OMs.begin(), OMs.end(), i) != OMs.end()) {
+      double pv = GetProbability(rho, energy, angle, true);
+      hit_p *= pv;
+      count++;
+    }
+    else {
+      pv = GetProbability(rho, energy, angle, false);
+      no_hit_p *= pv;
+    }
+  }
+  double power_hit = 1 / double (count);
+  double power_no_hit = 1 / double (num_of_OMs - count);
+  assert(!std::isnan(hit_p) && !std::isnan(no_hit_p));
+  hit_p = pow(hit_p, power_hit);
+  no_hit_p = pow(no_hit_p, power_no_hit);
+  return -hit_p*no_hit_p;
+}
+
+//______________________________________________________________________________
+int BRecQualify::HitCriterion() {
+  fTheta = fRecParameters->GetThetaRec();
+  fPhi = fRecParameters->GetPhiRec();
+  assert(fTheta >= 0 && fTheta <= M_PI);
+  assert(fPhi >= 0 && fPhi <= 2*M_PI);
+  double X0 = fRecParameters->GetX0Rec();
+  double Y0 = fRecParameters->GetY0Rec();
+  BMuonX0Y0 muonX0Y0;
+  muonX0Y0.SetX0(X0);
+  muonX0Y0.SetY0(Y0);
+  muonX0Y0.SetPolarAngle(fTheta);
+  muonX0Y0.SetAzimuthAngle(fPhi);
+  muonX0Y0.DefineXYZ();
+  fX = muonX0Y0.GetX() - fXshift;
+  fY = muonX0Y0.GetY() - fYshift;
+  fZ = muonX0Y0.GetZ() - fZshift;
+  ROOT::Math::Functor1D funcP(this, &BRecQualify::GetP);
+  ROOT::Math::BrentMinimizer1D bm;
+  bm.SetFunction(funcP, 0, 200000);
+  bm.Minimize(100, 10, 0);
+  fRecParameters->SetP(-bm.FValMinimum());
+  fRecParameters->SetE(bm.XMinimum());
+  if (fMCEventMask && fEventSource) {
+    if(fMuonNumber == -1) {
+      fRecParameters->SetTresMC(0, 0, 0);
+      fRecParameters->SetTimeMC(0);
+      fRecParameters->SetThetaMC(180);
+      fRecParameters->SetFuncValueMC(1000);
+      fRecParameters->SetX0MC(1000);
+      fRecParameters->SetY0MC(1000);
+      return kTRUE;
+    }
+    BMuon *muon = fEventSource->GetMuonTrack(fMuonNumber - 1);
+    fTheta = muon->GetPolarAngle();
+    fPhi = muon->GetAzimuthAngle();
+    // fE = muon->GetE();
+    assert(fTheta >= 0 && fTheta <= M_PI);
+    assert(fPhi >= 0 && fPhi <= 2*M_PI);
+    fX = muon->GetX() - fXshift;
+    fY = muon->GetY() - fYshift;
+    fZ = muon->GetZ() - fZshift;
+    fRecParameters->SetPMC(-GetP(muon->GetE()));
+  }
+  return kTRUE;
+}
+
+//______________________________________________________________________________
+double BRecQualify::GetProbability(double rho, double energy, double angle, bool hit) {
+  // rho *= 1.e-2; // in main program all distances in cm
+  energy *= 1e-3;  // in BSecInteraction energy is in GeV
+  if (energy < 0) energy = 0;
+  const double Seff_10inch = 506.7074791;  /* 25.4^2*Pi/4  in cm^2*/
+  double n_mu = 0.2 + 0.6*energy;
+  if (rho > fRhoUpLim) rho = fRhoUpLim;
+  double nmean = fInterpolator->Eval(rho);
+  /*
+    angular dependance of Hamamatsu 10" (lab. measurements 2010)
+    x - over Cosine
+    this is Jan's approximation
+    It contains non zero value at cos=-1
+    Lyashuk insists on it (2010)
+
+    c=== BAIKAL 10inchHQ2010 OM sencitivity_coefficients  ===================
+    data baicof/0.3082,-0.54192,0.19831,0.04912/
+    afectrun=baicof(1)+baicof(2)*ps+baicof(3)*ps**2+baicof(4)*ps**3
+  */
+  double x = cos(angle);
+  double par[]={0.3082,-0.54192,0.19831,0.04912};
+  double ham10HQlab = par[0] + x*par[1] + x*x*par[2] + x*x*x*par[3];
+  double npe = nmean*n_mu*Seff_10inch*ham10HQlab/rho;
+  double prob = exp(-npe);
+  // debugging print code
+  // if (hit && rho < fRhoUpLim) {
+  //   cout.precision(6);
+  //   cout << "nmean: " << nmean << "\tn_mu: " << n_mu << "\tham10HQlab: " << ham10HQlab << "\trho: " << rho << "\tX0: " << ((BMuonX0Y0*)fSecInteraction)->GetX0() << "\tY0: " << ((BMuonX0Y0*)fSecInteraction)->GetY0() << "\tprob: " << prob << endl;
+  // }
+  if (hit) {
+    prob = 1 - prob;
+    // if (prob > 0.9) cout << scientific << prob << '\t' << rho << '\t' << angle << '\t' << endl;
+    // if (prob < 1.e-6) prob = npe;
+  }
+  // else {
+  //   double min = numeric_limits<double>::min();
+  //   if (prob < min) prob = min;
+  // }
+  return prob;
+}
+//______________________________________________________________________________
+double BRecQualify::GetZDist(double theta, double phi) {
+  assert(theta >= 0 && theta <= M_PI);
+  assert(phi >= 0 && phi <= 2*M_PI);
+  double n [] = {sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta)};
+  std::vector<int> channels;
+  for (int i=0; i<fEvent->GetTotImpulses(); i++) {
+    if (!fEventMask->GetFlag(i)) continue;
+    BImpulse *impulse = fEvent->GetImpulse(i);
+    int channel = impulse->GetChannelID();
+    int channel_flag = fChannelMask->GetFlag(channel);
+    if (!channel_flag) continue;
+    if (std::find(channels.begin(), channels.end(), channel) == channels.end())
+      channels.push_back(channel);
+  }
+  double z_dist_max = 0;
+  for (int i = 0; i < (int) channels.size(); i++) {
+    for (int j = i + 1; j < (int) channels.size(); j++) {
+      double dx = fGeomTel->At(channels[i])->GetX()
+                - fGeomTel->At(channels[j])->GetX();
+      double dy = fGeomTel->At(channels[i])->GetY()
+                - fGeomTel->At(channels[j])->GetY();
+      double dz = fGeomTel->At(channels[i])->GetZ()
+                - fGeomTel->At(channels[j])->GetZ();
+      double dist = sqrt(dx*dx + dy*dy + dz*dz);
+      double dr [] = {dx, dy, dz};
+      assert(dist <= fTelLength);
+      double asp = 0;
+      for (int k = 0; k < 3; k++)
+        asp += n[k]*dr[k];
+      asp = abs(asp);
+      if (asp > z_dist_max) z_dist_max = asp;
+    }
+  }
+  return z_dist_max;
+}
+
+//______________________________________________________________________________
+void BRecQualify::ZDist() {
+  double theta = fRecParameters->GetThetaRec();
+  double phi = fRecParameters->GetPhiRec();
+  fRecParameters->SetZDist(GetZDist(theta, phi));
+  if (!fEventSource || !fMCEventMask) return;
+  double thetaMC = fRecParameters->GetThetaMC();
+  double phiMC = fRecParameters->GetPhiMC();
+  fRecParameters->SetZDistMC(GetZDist(thetaMC, phiMC));
+}
+
+//______________________________________________________________________________
+Int_t BRecQualify::GetLargestMuonNum() const
+{
+  // find MC muon number which gave the largest number of filtered impulses
+  // if there are no impulses from muons or cascades (pure noise event) return -1
+
+  int muonnum = -1; // output muon number
+
+  // first get number of filtered signal pulses
+  int npulses = 0;
+  for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+    BImpulse *imp = fEvent->GetImpulse(i);
+    Int_t nch = imp->GetChannelID();
+    BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+    if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
+      int magic = fMCEventMask->GetOrigin(i)->GetFlag();
+      if(magic != 0) {
+        npulses++;
+      }
+    }
+  }
+
+  if(npulses) {
+    // second get array for each impulse with muon numbers
+    int *muon = new int[npulses];
+    int ii = 0;
+    for(int i = 0; i < fEvent->GetTotImpulses(); i++) {
+      BImpulse *imp = fEvent->GetImpulse(i);
+      Int_t nch = imp->GetChannelID();
+      BChannelMask::EMode channelflag = fChannelMask->GetFlag(nch);
+
+      if(fEventMask->GetOrigin(i)->GetFlag() == 1 && (channelflag == BChannelMask::kOn || channelflag == BChannelMask::kBadChargeCalib)) {
+        int magic = fMCEventMask->GetOrigin(i)->GetFlag();
+        if(magic == 0) {
+          continue;
+        }
+        else if(magic < 0) { // muon case
+          muonnum = 1000 + magic;
+        }
+        else {
+          int sh = magic/1000;
+          muonnum = magic - sh * 1000;
+        }
+        //cout << i << " nch = " << nch << " magic = " << magic << " muonnum = " << muonnum << endl;
+        muon[ii] = muonnum;
+        ii++;
+      }
+    }
+
+    // third sort the array
+    int index[npulses];
+    TMath::Sort(npulses, muon, index, kFALSE);
+
+    if(fVerbose) {
+      for(int i = 0; i < npulses; i++) {
+        cout << i << " " << muon[i] << " " << index[i] << endl;
+      }
+
+      for(int i = 0; i < npulses; i++) {
+        cout << muon[index[i]] << " ";
+      }
+      cout << endl;
+    }
+
+    // fourth the muon number which gave the largest number of impulses.
+    // If the number of impulses are equal for some muons take the first one
+    int nmax = 1; // number of pulses for maximal muon number
+    int nmuonmax = muon[index[0]]; // maximal muon number
+    int ncur = 1; // number of pulses for current muon number
+    int nmuoncur = muon[index[0]]; // current muon number
+    for(int i = 1; i < npulses; i++) {
+      if(fVerbose) {
+        cout << "nmuoncur = " << nmuoncur << " muon[index[i]] = " << muon[index[i]] << endl;
+      }
+      if(nmuoncur == muon[index[i]]) {
+        ncur++;
+      }
+      else {
+        if(ncur > nmax) {
+          nmax = ncur;
+          nmuonmax = nmuoncur;
+        }
+        ncur = 1;
+        nmuoncur = muon[index[i]];
+      }
+
+      if(fVerbose) {
+        cout << "nmax = " << nmax << " nmuonmax = " << nmuonmax << " ncur = " << ncur << " nmuoncur = " << nmuoncur << endl;
+        int kkk;
+        cin >> kkk;
+      }
+    }
+
+    muonnum = nmuonmax;
+    if(muonnum == 0) {
+      for(int i = 0; i < npulses; i++) {
+        cout << muon[index[i]] << " ";
+      }
+      cout << "BRecQualify::GetLargestMuonNum(): strange situation has happened, muon number defined to 0 doesnt exist" << endl;
+      exit(1);
+    }
+  }
+
+  return muonnum;
 }
