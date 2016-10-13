@@ -16,6 +16,7 @@ class TFile;
 class TH1F;
 class TH2F;
 class TProfile;
+class TVector3;
 class BEvent;
 class BMCEvent;
 class BEventMask;
@@ -60,12 +61,47 @@ class BMyRecoReco : public MTask
   float cVacuum;
 
   TFile* fOUT;
+  TH1F* hMuMult;
+  TH1F* hNhit;
+  TH1F* hNhit1mu;
+  TH1F* hChi2;
+  TH1F* hChi2_zoom1;
+  TH2F* hChi2_rhoAvg;
+  TH2F* hChi2_rhoMax;
   TH1F* hTimeDiff;
+  TH1F* hTimeDiff_usedHits;
   TH1F* hDistToTrack;
+  TH1F* hDistToTrack_usedHits;
+  TH1F* hDistToTrack1mu_usedHits;
+
+  TH1F* hDistToTrackMC;
+
+  TH1F* hDistToTrack_debug;
   
-  float getTrackDistanceToOM(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> xyzOM);
-  float getTimeEstimate_ns(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> pointInSpace);
+  TH1F* hPolar1muMC;
+  TH1F* hPolar1muRec;
+  TH1F* hAngle1muGenRec;
+  TH1F* hMagNum_usedHits;
+
+  TH1F* hHitsDR_MC;
+
+  TH2F* hExtrapolatedHits;
+  TH2F* hRealHits;
+
+  TH2F* hExtrapolatedHitsALL;
+  TH2F* hRealHitsALL;
+
+  //for MC debug
+
+  
+  //  float getTrackDistanceToOM(std::vector<float> initialPoint, std::vector<float> trajectoryDirection, std::vector<float> xyzOM);
+  float getTrackDistanceToOM(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 xyzOM);
+  float getTimeEstimate_ns(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 pointInSpace);
   int calibChanID;
+
+  int RunMCAnalysis();
+  
+  TVector3 xyToXYZ(TVector3 s, float X, float Y);
   
   ClassDef(BMyRecoReco, 0);
 };

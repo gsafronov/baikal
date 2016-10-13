@@ -8,9 +8,8 @@
 //                                                                         //
 /////////////////////////////////////////////////////////////////////////////
 
-#ifndef MARS_MTask
-#include "MTask.h"
-#endif
+//#include "MTask.h"
+#include "BFilter.h"
 
 class TProfile;
 class BEvent;
@@ -25,23 +24,33 @@ class BJoinExtractedHeader;
 class BRecParameters;
 
 
-
-class BMyRecoChanSetter : public MTask
+class BMyRecoChanSetter : public BFilter
 {
- protected:
+ private:
   BChannelMask *      fChannelMask;   //!
+  BEventMask *        fInputEventMask;
+  BMCEvent *          fMCEvent;
+  BEvent *            fEvent;
   
   // MTask
-  virtual Int_t   PreProcess(MParList * pList);
-  virtual Int_t   Process();
-  virtual Int_t   PostProcess();
+  Int_t   PreProcess(MParList * pList);
+  //Int_t         Process();
+  //virtual Int_t   PostProcess();
+  Bool_t          Filter();
+
+  TString     fInputMaskName;
+  
+  
+  std::vector<int> chanIDs;
+  bool fMaskNoise;
   
  public:
-  BMyRecoChanSetter(int ch);
+  BMyRecoChanSetter(const char *name = NULL, const char *title = NULL);
   ~BMyRecoChanSetter();
+
+  void        SetInputMaskName(TString name) {fInputMaskName = name; }
+  void        SetOutputMaskName(TString name) {fOutputMaskName = name; }
   
- private:
-  int chanID;
 
   ClassDef(BMyRecoChanSetter, 0);
 };
