@@ -62,7 +62,17 @@ class BMyRecoReco : public MTask
 
   TFile* fOUT;
   TH1F* hMuMult;
+  TH1F* hPolar1muMC;
+  TH1F* hPolar1muRec;
+  TH1F* hRho1muMC;
+  TH1F* hNhitMC;
   TH1F* hNhit;
+  TH1F* hNdirectHit;
+  TH1F* hNshowerHit;
+  TH1F* hNnoiseHit;
+  TH1F* hDistToTrackMC;
+  TH1F* hNhitPerChannel;
+  
   TH1F* hNhit1mu;
   TH1F* hChi2;
   TH1F* hChi2_zoom1;
@@ -74,12 +84,8 @@ class BMyRecoReco : public MTask
   TH1F* hDistToTrack_usedHits;
   TH1F* hDistToTrack1mu_usedHits;
 
-  TH1F* hDistToTrackMC;
-
   TH1F* hDistToTrack_debug;
   
-  TH1F* hPolar1muMC;
-  TH1F* hPolar1muRec;
   TH1F* hAngle1muGenRec;
   TH1F* hMagNum_usedHits;
 
@@ -91,6 +97,9 @@ class BMyRecoReco : public MTask
   TH2F* hExtrapolatedHitsALL;
   TH2F* hRealHitsALL;
 
+  TH2F* hNumMC_NumReco;
+  TH2F* hDMC_dReco;
+  
   //for MC debug
 
   
