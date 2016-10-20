@@ -20,6 +20,8 @@
 #include "TProfile.h"
 #include "TFile.h"
 #include "TMath.h"
+#include "TRotation.h"
+#include "TVector3.h"
 
 #include <math.h>
 #include <vector>
@@ -31,9 +33,43 @@ ClassImp(BMyRecoMC);
 
 BMyRecoMC::BMyRecoMC(string fname)
 {
+  fName  = "BMyRecoMC";
+  fTitle = "RMyRecoMC";
+  
   iEvent=0;
-   
+
+  fNCalibTracks=0;
+  
   fOUT=new TFile(fname.c_str(),"RECREATE");
+
+  hNmuResp=new TH1F("hNmuResp","hNmuResp",50,0,50);
+  hNmuTotal=new TH1F("hNmuTotal","hNmuTotal",50,0,50);
+  //  hNmuResp_N5_amp3=new TH1F("hNmuResp_N5_amp3","hNmuResp_N5_amp3",50,0,50);
+  
+  hPolar1muMC=new TH1F("hPolar1muMC","hPolar1muMC",1000,-500,500);
+  hRho1muMC=new TH1F("hRho1muMC","hRho1muMC",1000,-500,500);
+  hNhit1muMC=new TH1F("hNhit1muMC","hNhit1muMC",100,0,100);
+  //hNhit1muSignalMC=new TH1F("hNhit1muSignalMC","hNhit1muSignalMC",100,0,100);
+  //hNhit1muSignal3peMC=new TH1F("hNhit1muSignal3peMC","hNhit1muSignal3peMC",100,0,100);
+  hNdirect1muHit=new TH1F("hNdirect1muHit","hNdirect1muHit",100,0,100);
+  hNshower1muHit=new TH1F("hNshower1muHit","hNshower1muHit",100,0,100);
+  hNnoiseHit=new TH1F("hNnoiseHit","hNnoiseHit",100,0,100);
+  hNhitPerChannel=new TH1F("hNhitPerChannel","hNhitPerChannel",193,0,193);
+  hDistToTrackMC_direct=new TH1F("hDistToTrackMC_direct","hDistToTrackMC_direct",1000,0,1000);
+  hDistToTrackMC_shower=new TH1F("hDistToTrackMC_shower","hDistToTrackMC_shower",1000,0,1000);
+  hTimeDifference_norm=new TH1F("hTimeDifference_norm","hTimeDifference_norm",2000,-100,100);
+  hDiffReal_DiffEst=new TH2F("hDiffReal_DiffEst","hDiffReal_DiffEst",2000,-1000,1000,2000,-1000,1000);
+  hPulsesPerChannel=new TH1F("hPulsesPerChannel","hPulsesPerChannel",10,0,10);
+  hYieldVsAmpl_ref=new TH1F("hYieldVsAmpl_ref","hYieldVsAmpl_ref",50,1,11);
+ 
+  char tmp[100];
+  for (int i=0; i<192; i++){
+    sprintf(tmp,"hChanOffset_%d",i+1);
+    hChanOffset[i]=new TH1F(tmp,tmp,2000,-1000,1000);
+  }
+
+  hDebugTimeShowerHits=new TH2F("hDebugTimeShowerHits","hDebugTimeShowerHits",5000,0,5000,20,0,20);
+  
   hMuonN=new TH1F("hMuonN","hMuonN",200,0,200);
   hTotalMuonN=new TH1F("hTotalMuonN","hTotalMuonN",100,0,100);
   hMuCutN=new TH1F("hMuCutN","hMuCutN",100,0,100);
@@ -54,9 +90,11 @@ BMyRecoMC::BMyRecoMC(string fname)
   hMapOfHits1=new TH2F("hMapOfHits1","hMapOfHits1",21,-0.5,20.5,25,-0.5,24.5);
   hMapOfHits3=new TH2F("hMapOfHits3","hMapOfHits3",21,-0.5,20.5,25,-0.5,24.5);
   hGeom=new TH2F("hGeom","hGeom",2000,0.5,20.5,10000,0,1000);
+  hPulseTime=new TH1F("hPulseTime","hPulseTime",10000,-10,9990);
 
-  clight=3e8*pow(1.33,-1);
-  cmu=3e8;
+  
+  cWater=3e8*pow(1.33,-1);
+  cVacuum=3e8;
 }
 
 BMyRecoMC::~BMyRecoMC()
@@ -88,6 +126,8 @@ Int_t BMyRecoMC::Process()
   // std::cout<<"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<WE ARE IN BMyReco::Process"<<std::endl;
   if (iEvent%10000==0) std::cout<<"eventNumber: "<<iEvent<<std::endl;
 
+  RunMCAnalysis();
+  
   int nMuon=fMCEvent->GetMuonsN();
   hMuonN->Fill(nMuon,1);
   int nTotalMuon=fMCEvent->GetResponseMuonsN();
@@ -116,6 +156,12 @@ Int_t BMyRecoMC::Process()
   int nChannels=fMCEvent->GetChannelN();
   if (nTotalMuon==1) hChannelN->Fill(nChannels,1);
 
+  for (int i=0; i<nChannels; i++){
+    for (int j=0; j<fMCEvent->GetHitChannel(i)->GetPulseN(); j++){
+      if (fMCEvent->GetHitChannel(i)->GetPulse(j)->GetMagic()!=1) hPulseTime->Fill(fMCEvent->GetHitChannel(i)->GetPulse(j)->GetTime(),1);
+    }
+  }
+  
   int nPulses=fEvent->GetTotImpulses();
 
   std::vector<int> orderT_id=filterHits(1);
@@ -148,6 +194,31 @@ Int_t BMyRecoMC::PostProcess()
 {
   std::cout<<"WE ARE IN BMyReco::PostProcess"<<std::endl;
   fOUT->cd();
+  
+  hNmuResp->Write();
+  hNmuTotal->Write();
+  //  hNmuResp_amp3->Write();
+  hPolar1muMC->Write();
+  hRho1muMC->Write();
+  hNhit1muMC->Write();
+  hNdirect1muHit->Write();
+  hNshower1muHit->Write();
+  hNnoiseHit->Write();
+  hNhitPerChannel->Write();
+  hDistToTrackMC_direct->Write();
+  hDistToTrackMC_shower->Write();
+  hTimeDifference_norm->Write();
+  hDiffReal_DiffEst->Write();
+  hPulsesPerChannel->Write();
+  hYieldVsAmpl_ref->Write();
+
+  fOUT->mkdir("chanOffset");
+  fOUT->cd("chanOffset");
+  for (int i=0; i<192; i++) hChanOffset[i]->Write();
+  fOUT->cd();
+
+  hDebugTimeShowerHits->Write();
+  
   hMuonN->Write();
   hTotalMuonN->Scale(pow(hTotalMuonN->GetEntries(),-1));
   hTotalMuonN->Write();
@@ -167,6 +238,10 @@ Int_t BMyRecoMC::PostProcess()
   hMapOfHits1->Write();
   hMapOfHits3->Write();
   hGeom->Write();
+  hPulseTime->Write();
+
+  std::cout<<"TOTAL OF "<<fNCalibTracks<<" EVENTS USED FOR CAIBRATION"<<std::endl;
+  
   return kTRUE;
 }
 
@@ -272,4 +347,257 @@ std::vector<float> BMyRecoMC::getDirection(int hit1_id, int hit2_id)
   return dir;
 }
 
+float BMyRecoMC::getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM)
+{
+  TVector3 diff(xyzOM.X()-initialPoint.X(),xyzOM.Y()-initialPoint.Y(),xyzOM.Z()-initialPoint.Z());
 
+  float absDir=direction.Mag();
+
+  float scalarProd=diff.Dot(direction);
+
+  float cosAlpha=scalarProd/(diff.Mag()*absDir);
+
+  cosAlpha=round(cosAlpha*10000000)*pow(10000000,-1); 
+
+  float dist=diff.Mag()*sqrt(1-cosAlpha*cosAlpha);
+
+  return dist;
+}
+
+//return time of propagation from arbitrary point A on trajectory with direction s to coordinates M
+float BMyRecoMC::getTimeEstimate_ns(TVector3 A, TVector3 s, TVector3 M)
+{
+  TVector3 AM(M.X()-A.X(),M.Y()-A.Y(),M.Z()-A.Z());
+  float modAM=AM.Mag();
+  float modS=s.Mag();
+  //  std::cout<<"AM: "<<modAM<<"  s: "<<modS<<std::endl;
+
+  float cosAlpha=AM.Dot(s)/(modAM*modS);
+  cosAlpha=round(cosAlpha*1000000)*pow(1000000,-1); //rounding to avoid nan in the next line
+  float sinAlpha=sqrt(1-pow(cosAlpha,2)); 
+
+  //water refraction index
+  float refWat=1.33;
+  float cos_c=1/1.33;
+  float sin_c=sqrt(1-cos_c*cos_c);
+  float tan_c=sin_c/cos_c;
+
+  
+  //  std::cout<<"cos, sin: "<<cosAlpha<<"   "<<sinAlpha<<"  "<<cos_c<<"  "<<sin_c<<"  "<<tan_c<<std::endl;
+  /*
+  float dist=modAM*(cosAlpha - 2.47*sinAlpha);
+  
+  //  std::cout<<"dist:  "<<dist<<std::endl;
+  float time=1e9*dist/(clight);
+  */
+
+  //separate distance in ligh and muon parts
+
+  float dMuon=modAM*cosAlpha - modAM*sinAlpha/tan_c;
+  float tMuon=1e9*dMuon/cVacuum;
+
+  float dLight=modAM*sinAlpha/sin_c;
+  float tLight=1e9*dLight/cWater;
+  
+  float time=tMuon+tLight;
+
+  //  std::cout<<"ddddddddddddd"<<std::endl;
+
+  return time;
+}
+
+
+int BMyRecoMC::RunMCAnalysis()
+{
+  
+  float primThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
+  float primPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
+
+  hNmuResp->Fill(fMCEvent->GetResponseMuonsN(),1);
+  hNmuTotal->Fill(fMCEvent->GetTotalMuonsN(),1);
+  
+  hPolar1muMC->Fill(fMCEvent->GetPrimaryParticlePolar(),1);
+  
+  float angle=-1;
+
+  TVector3 genVec(sin(primThetaRad)*cos(primPhiRad),
+		  sin(primThetaRad)*sin(primPhiRad),
+		  cos(primThetaRad));
+
+  TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-1000*genVec.X(), fMCEvent->GetTrack(0)->GetY()-1000*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-1000*genVec.Z());
+  
+  
+  if (fMCEvent->GetResponseMuonsN()!=1) return 0;
+
+  bool useEventForCalib=false;
+  
+  for (int iAmpl=0; iAmpl<50; iAmpl++){
+    float AMPL=1+0.2*iAmpl;
+    int nHits=0;
+    for (int iCh=0; iCh<fMCEvent->GetChannelN(); iCh++){
+      bool countChan=false;
+      for (int iPu=0; iPu<fMCEvent->GetHitChannel(iCh)->GetPulseN(); iPu++){
+	if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()!=1){
+	  if(fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetAmplitude()>AMPL) countChan=true;
+	}
+      }
+      if (countChan) nHits++;
+    }
+    if (nHits>=5) hYieldVsAmpl_ref->Fill(AMPL+0.1,1);
+    if (iAmpl==5&&nHits>=5) useEventForCalib=true;
+  }
+
+  TVector3 zero(0,0,0);
+  float rho=getTrackDistanceToOM(inPoTrack, genVec, zero);
+  hRho1muMC->Fill(rho,1);
+
+  
+  for (int i=0; i<fMCEvent->GetResponseMuonsN(); i++){
+    int nStrongInt=0;
+    for (int j=0; j<fMCEvent->GetTrack(0)->GetInteractionN(); j++){
+      if (fMCEvent->GetTrack(0)->GetInteraction(j)->GetEnergy()>0.1) nStrongInt++;
+    }
+  }
+
+  int nChans=fMCEvent->GetChannelN();
+  int nPulses=0;
+  int nDirectPulses=0;
+  int nShowerPulses=0;
+  int nNoisePulses=0;
+
+  for (int i=0; i<nChans; i++){
+
+    int idch=fMCEvent->GetHitChannel(i)->GetChannelID()-1;
+    idch=24*floor(idch/24)+(24-idch%24);
+    idch=idch-1;
+    
+    TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
+    
+    bool useChanDirect=false;
+    bool useChanShower=false;
+    int nPulsesPerChannel=0;
+    for (int iP=0; iP<fMCEvent->GetHitChannel(i)->GetPulseN(); iP++){
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()+1000==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
+	useChanDirect=true;
+	nDirectPulses++;
+	//nPulsesPerChannel++;
+	nPulses++;
+      }
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()>1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
+	useChanShower=true;
+	nPulsesPerChannel++;
+	nShowerPulses++;
+	if (iEvent==9507) {
+	  hDebugTimeShowerHits->Fill(fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetTime(), (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()-1)/1000, 1);
+	  std::cout<<fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()-1000<<std::endl;
+	}
+	
+	nPulses++;
+      }
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
+	nNoisePulses++;
+	nPulses++;
+      }
+      hPulsesPerChannel->Fill(nPulsesPerChannel,1);
+    }
+
+    hNhit1muMC->Fill(nPulses,1);
+    hNdirect1muHit->Fill(nDirectPulses,1);
+    hNshower1muHit->Fill(nShowerPulses,1);
+    hNnoiseHit->Fill(nNoisePulses,1);
+
+    if (!useChanDirect&&!useChanShower) continue;
+
+    hNhitPerChannel->Fill(idch,1);
+
+    //TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
+    //hRealHitsALL->Fill(floor((idch)/24),(idch)%24+1);
+
+    float dist=getTrackDistanceToOM(inPoTrack, genVec, chanXYZ);
+    if (useChanDirect) hDistToTrackMC_direct->Fill(dist,1);
+    if (useChanShower) hDistToTrackMC_shower->Fill(dist,1);
+
+    //calculate time difference between two adjacent channels 
+    //compare to actual time difference
+    if (!useEventForCalib) continue;
+    fNCalibTracks++;
+    //std::cout<<"evt: "<<iEvent<<"    number of shower hits in channel #"<<idch<<":  "<<nPulsesPerChannel<<std::endl;
+    if (fMCEvent->GetHitChannel(i+1)->GetPulseN()!=1) continue;
+    if (fMCEvent->GetHitChannel(i+1)->GetPulse(0)->GetAmplitude()<3) continue;
+    
+    float time0=0;
+    float time1=0;
+    if (fMCEvent->GetHitChannel(i)->GetPulse(0)->GetMagic()!=1){
+
+      //find tzero of muon not using this channel
+      float tZERO=0;
+      int nPulseTZ=0;
+      for (int iCh=0; iCh<fMCEvent->GetChannelN(); iCh++){
+	if (iCh==i) continue;
+	int idch=fMCEvent->GetHitChannel(iCh)->GetChannelID()-1;
+	idch=24*floor(idch/24)+(24-idch%24);
+	idch=idch-1;
+	
+	TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
+	
+	for (int iPu=0; iPu<fMCEvent->GetHitChannel(iCh)->GetPulseN(); iPu++){
+	  if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()!=1){
+	      //&&fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetAmplitude()>3) {
+	    tZERO+=fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetTime()-getTimeEstimate_ns(inPoTrack,genVec,chanXYZ);
+	    nPulseTZ++;
+	    break;
+	  }
+	}
+      }
+      tZERO=tZERO/nPulseTZ;
+      /////
+      
+      time0=fMCEvent->GetHitChannel(i)->GetPulse(0)->GetTime();
+
+      time1=tZERO+getTimeEstimate_ns(inPoTrack,genVec, chanXYZ);
+
+      hTimeDifference_norm->Fill(time0-time1,1);
+      hChanOffset[idch]->Fill(time0-time1,1);
+      hDiffReal_DiffEst->Fill(time0,time1,1);
+      
+      /*
+      for (int iNext=i+1; iNext<nChans; iNext++){
+	
+	if (fMCEvent->GetHitChannel(iNext)->GetPulseN()==1&&
+	    fMCEvent->GetHitChannel(iNext)->GetPulse(0)->GetMagic()!=1&&
+	    fMCEvent->GetHitChannel(iNext)->GetPulse(0)->GetAmplitude()>=3){
+	
+	  time1=fMCEvent->GetHitChannel(i+1)->GetPulse(0)->GetTime();
+	  
+	  float dTim=time1-time0;
+	  
+	  int idchNext=fMCEvent->GetHitChannel(i+1)->GetChannelID()-1;
+	  idchNext=24*floor(idchNext/24)+(24-idchNext%24);
+	  idchNext=idchNext-1;
+	  TVector3 chanXYZnext(fGeomTel->At(idchNext)->GetX(),fGeomTel->At(idchNext)->GetY(),fGeomTel->At(idchNext)->GetZ());
+	  
+	  //calculate time of propagation from zero point
+
+	  //first define time in zero point averaging estimatied time of propagation to all other hits except for considered hit
+	  	  
+	  float timeZero=getTimeEstimate_ns(inPoTrack, genVec, chanXYZ);
+	  float timeOne=getTimeEstimate_ns(inPoTrack, genVec, chanXYZnext);
+	  float dTimEstimate=timeOne-timeZero;
+	  if (time0!=0&&time1!=0&&timeZero!=0&&timeOne!=0) {
+	    hTimeDifference_norm->Fill(dTim-dTimEstimate,1);
+	    hChanOffset[idch]->Fill(dTim-dTimEstimate,1);
+	    hDiffReal_DiffEst->Fill(dTim,dTimEstimate,1);
+	  }
+	  break;
+	}
+	
+      }
+      */
+      
+    }
+    //     std::cout<<dTim<<"   "<<dTimEstimate<<"        debug: "<<time0<<" "<<time1<<"    est: "<<timeZero<<"  "<<timeOne<<std::endl;
+  }
+
+  
+  return 0;
+}

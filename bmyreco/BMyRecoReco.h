@@ -57,6 +57,7 @@ class BMyRecoReco : public MTask
  private:
   //counter
   int iEvent;
+  int fNCalibTracks;
   float cWater;
   float cVacuum;
 
@@ -72,6 +73,12 @@ class BMyRecoReco : public MTask
   TH1F* hNnoiseHit;
   TH1F* hDistToTrackMC;
   TH1F* hNhitPerChannel;
+  TH1F* hYieldVsAmpl_ref;
+  TH1F* hYieldVsAmpl_reco;
+  
+  TH1F* hDebugRCenter;
+  TH1F* hDebugRhoFedor;
+  TH1F* hDebugTimeShowerHits;  
   
   TH1F* hNhit1mu;
   TH1F* hChi2;

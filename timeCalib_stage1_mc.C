@@ -22,6 +22,7 @@
 #include "BAmplitudeFilter.h"
 #include "BMCRead.h"
 #include "BReadMCGeomWout.h"
+//#include "BMyRecoMC.h"
 
 
 void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x10m-2sec-tr112-thr4.0-1.5.wout", string root_infile="OUT/outout.root",  int calibChanID=10, Bool_t isrec = kTRUE)
@@ -56,15 +57,18 @@ void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x1
     tasks.AddToList(&reader);
     
     //Initialize geometry
-    //BGeomApply geom;
-    //tasks.AddToList(&geom);
-    //geom.SetVerbose(1);
-    //geom.SetGeometry("BGeomTel2015MC");
+    /*
+    BGeomApply geom;
+    tasks.AddToList(&geom);
+    geom.SetVerbose(1);
+    geom.SetGeometry("BGeomTel2015MC");
+    */
     
     BReadMCGeomWout geom;
     geom.SetNSectionsInString(2);
     geom.SetVerbose(kTRUE);
     tasks.AddToList(&geom);
+    
     
     TString config_path = "../config/";
     BChannelMaskApply chmask;
@@ -72,21 +76,36 @@ void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x1
     chmask.SetVerbose(kTRUE);
     tasks.AddToList(&chmask);
 
-    BMyRecoChanSetter chSet(calibChanID);
-    tasks.AddToList(&chSet);
-    
     //Unify mc-events 
     BExtractMCEventSum eventExtractor;
     tasks.AddToList(&eventExtractor);
+
+    BMyRecoMC mcAnalysis("mcAnalysis.root");
+    tasks.AddToList(&mcAnalysis);
     
+    /*
+    std::vector<int> chans;
+    chans.push_back(calibChanID);
+    BMyRecoChanSetter chSet(chans);
+    tasks.AddToList(&chSet);
+    */
     BAmplitudeFilter ampfilt;
     ampfilt.SetAmpThreshold(3);
     tasks.AddToList(&ampfilt);
+
+    
+    std::vector<int> chans;
+    chans.push_back(calibChanID);
+    BMyRecoChanSetter chSet;
+    chSet.SetInputMaskName("AmplitudeFilterMask");
+    chSet.SetOutputMaskName("MCNoiseFilterMask");
+    tasks.AddToList(&chSet);
+    
     
     BCausality causFilter1("CAUS1");
     causFilter1.SetCausType(3);
     causFilter1.SetCausLimit(50);
-    causFilter1.SetInputMaskName("AmplitudeFilterMask");
+    causFilter1.SetInputMaskName("MCNoiseFilterMask");
     causFilter1.SetOutputMaskName("CausalityFilterMask");
     //causFilter1.SetVerbose(kTRUE);
     tasks.AddToList(&causFilter1);
@@ -102,7 +121,7 @@ void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x1
     trigcut.SetMinStringNum(2);
     trigcut.SetMinChannelNum(5);
     trigcut.SetMaskName("MuonCriterionFilterMask");
-    tasks.AddToList(&trigcut);
+    tasks.AddToList(&trigcut); 
     
     BFQualify qual;
     qual.SetFilterEventMaskName("MuonCriterionFilterMask");
@@ -115,7 +134,7 @@ void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x1
     
     BRecQualify recqual;
     recqual.SetHitCriterionFlag();
-    recqual.SetQ10Path(gSystem->ExpandPathName("$BARSSYS/config/quant10HE.data"));
+    recqual.SetQ10Path(gSystem->ExpandPathName("/home/local/work/baikal/bars2/trunk/config/quant10HE.data"));
     recqual.SetFilterEventMaskName("MuonCriterionFilterMask");
     
     if(isrec) {
@@ -143,7 +162,7 @@ void timeCalib_stage1_mc(string mc_infile="/home/local1/work/baikal/mc/cors-n8x1
       writer.AddContainer("BRecParameters", "Events");
     }
     
-    //Init and run event loop
+    //Init and run event loop1Z
     MEvtLoop eventLoop;
     eventLoop.SetParList(&plist);
     eventLoop.Eventloop();

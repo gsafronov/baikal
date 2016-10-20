@@ -16,6 +16,7 @@ class TFile;
 class TH1F;
 class TH2F;
 class TProfile;
+class TVector3;
 class BEvent;
 class BEventMask;
 class BGeomTel;
@@ -48,11 +49,33 @@ class BMyRecoMC : public MTask
 
   //output
   TFile* fOUT;
+  TH1F* hNmuResp;
+  TH1F* hNmuTotal;
+  TH1F* hPolar1muMC;
+  TH1F* hRho1muMC;
+  TH1F* hNhit1muMC;
+  TH1F* hNdirect1muHit;
+  TH1F* hNshower1muHit;
+  TH1F* hNnoiseHit;
+  TH1F* hDistToTrackMC_direct;
+  TH1F* hDistToTrackMC_shower;
+  TH1F* hNhitPerChannel;
+  TH1F* hTimeDifference_norm;
+  TH2F* hDiffReal_DiffEst;
+  TH1F* hPulsesPerChannel;
+
+  TH1F* hChanOffset[192];
+  
   TH1F* hMuonN;
   TH1F* hTotalMuonN;
   TH1F* hMuCutN;
   TH1F* hMuNotNull;
   TH1F* hMuonE;
+
+  TH1F* hThetaPrimary;
+  TH2F* hNHits_ThetaPrimary;
+  TH2F* hNHits_EnergyPrimary;
+
   TH1F* hChannelN;
 
   TH1F* hChannelN_bevt;
@@ -60,23 +83,26 @@ class BMyRecoMC : public MTask
   TH2F* hMapOfHits1;
   TH2F* hMapOfHits3;  
   TH2F* hGeom;
-
+  TH1F* hPulseTime;
+  
  public:
   BMyRecoMC(string fname);
   ~BMyRecoMC();
   
+ private:
   std::vector<int> filterHits(float minAmpl);
   std::vector<float> getHitLocation(int hitID);
   float getDeltaT_ns(int hit1_id, int hit2_id);
   float getDeltaR_m(int hit1_id, int hit2_id);
   std::vector<float> getDirection(int hit1_id, int hit2_id);
   
+  int RunMCAnalysis();
+  float getTrackDistanceToOM(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 xyzOM);
+  float getTimeEstimate_ns(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 pointInSpace);
 
-
- private:
   //counter
-  float clight;
-  float cmu;
+  float cWater;
+  float cVacuum;
 
   Int_t iEvent;
 

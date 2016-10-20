@@ -30,6 +30,9 @@ ClassImp(BMyRecoReco);
 
 BMyRecoReco::BMyRecoReco(string fname, int cChan, bool useMCEvent)
 {
+  fName  = "BMyRecoReco";
+  fTitle = "RMyRecoReco";
+  
   iEvent=0;
  
   fOUT=new TFile(fname.c_str(),"RECREATE");
@@ -50,8 +53,12 @@ BMyRecoReco::BMyRecoReco(string fname, int cChan, bool useMCEvent)
   hNshowerHit=new TH1F("hNshowerHit","hNshowerHit",100,0,100);
   hNnoiseHit=new TH1F("hNnoiseHit","hNnoiseHit",100,0,100);
   hNhitPerChannel=new TH1F("hNhitPerChannel","hNhitPerChannel",193,0,193);
+  hDistToTrackMC=new TH1F("hDistToTrackMC","hDistToTrackMC",1000,0,1000);
+  hYieldVsAmpl_reco=new TH1F("hYieldVsAmpl_reco","hYieldVsAmpl_reco",50,1,11);
   
-  
+  hDebugRCenter=new TH1F("hDebugRCenter","hDebugRCenter",1000,0,10);
+  hDebugRhoFedor=new TH1F("hDebugRhoFedor","hDebugRhoFedor",1000,0,1000);
+
   hNhit1mu=new TH1F("hNhit1mu","hNhit1mu",100,0,100);
   hChi2=new TH1F("hChi2","hChi2",10000,0,1000);
   hChi2_zoom1=new TH1F("hChi2_zoom1","hChi2_zoom1",1000,0,1);
@@ -60,8 +67,6 @@ BMyRecoReco::BMyRecoReco(string fname, int cChan, bool useMCEvent)
   hDistToTrack=new TH1F("hDistToTrack","hDistToTrack",1000,0,1000);
   hDistToTrack_usedHits=new TH1F("hDistToTrack_usedHits","hDistToTrack_usedHits",1000,0,1000);
   hDistToTrack1mu_usedHits=new TH1F("hDistToTrack1mu_usedHits","hDistToTrack1mu_usedHits",1000,0,1000);
-
-  hDistToTrackMC=new TH1F("hDistToTrackMC","hDistToTrackMC",1000,0,1000);
 
   hDistToTrack_debug=new TH1F("hDistToTrack_debug","hDistToTrack_debug",10000,0,100);
   
@@ -101,7 +106,10 @@ BMyRecoReco::~BMyRecoReco()
   hNshowerHit->Write();
   hNnoiseHit->Write();
   hNhitPerChannel->Write();
+  hYieldVsAmpl_reco->Write();
   
+  hDebugRCenter->Write();
+  hDebugRhoFedor->Write();
   
   hNhit1mu->Write();
   hTimeDiff->Write();
@@ -209,11 +217,29 @@ Int_t BMyRecoReco::Process()
 		  cos(thetaRad));
 
 
-  RunMCAnalysis();
+  //RunMCAnalysis();
 
+  //for efficiency study: plot number of single muons with N >= 5 hits as a function of the amplitude threshold of selected hits
+ 
   
   //  if (fMCEvent->GetResponseMuonsN()==1&&fMCEvent->GetMuonsN()==1&&fMCEvent->GetTotalMuonsN()==1){
   if (fMCEvent->GetResponseMuonsN()==1){
+
+    for (int iAmpl=0; iAmpl<50; iAmpl++){
+      float AMPL=1+0.2*iAmpl;
+      int nHits=0;
+      for (int iCh=0; iCh<fMCEvent->GetChannelN(); iCh++){
+	bool countChan=false;
+	for (int iPu=0; iPu<fMCEvent->GetHitChannel(iCh)->GetPulseN(); iPu++){
+	  if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()!=1){
+	    if(fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetAmplitude()>AMPL) countChan=true;
+	  }
+	}
+	if (countChan) nHits++;
+      }
+      if (nHits>=5) hYieldVsAmpl_reco->Fill(AMPL+0.1,1);
+      //     if (iAmpl==10&&nHits>=5) useEventForCalib=true;
+    }
     
     //filter muon based on energy and total interaction energy
     
@@ -280,6 +306,9 @@ Int_t BMyRecoReco::Process()
 
 
   //  std::cout<<"reco: "<<getTrackDistanceToOM(tZeroPoint, trackDirection, center)<<"   "<<sqrt(pow(fRecParam->GetX0Rec(),2)+pow(fRecParam->GetY0Rec(),2))<<std::endl;
+
+  hDebugRCenter->Fill(getTrackDistanceToOM(tZeroPoint, trackDirection, center)/sqrt(pow(fRecParam->GetX0Rec(),2)+pow(fRecParam->GetY0Rec(),2)),1);
+  
   //std::cout<<"xyzOM: "<<xyzOM.X()<<"  "<<xyzOM.Y()<<"  "<<xyzOM.Z()<<std::endl;
   //float rTrackOM=getTrackDistanceToOM(tZeroPoint, trackDirection, xyzOM); //meters
 
@@ -303,6 +332,9 @@ Int_t BMyRecoReco::Process()
   for (int i=0; i<fRecParam->GetNhit(); i++){
     float Tres=fRecParam->GetTres(i);
     int nch=fRecParam->GetNchGeom(i);
+    nch=24*floor(nch/24)+(24-nch%24);
+    nch=nch-1;
+    
     TVector3 xyzHit(fGeomTel->At(nch)->GetX(), fGeomTel->At(nch)->GetY(), fGeomTel->At(nch)->GetZ());
     
     //propagationTime to hit from tZeroPoint:
@@ -314,66 +346,67 @@ Int_t BMyRecoReco::Process()
       //std::cout<<"hits: "<<distUsed<<" "<<angle<<std::endl;
       //      if (angle<10&&angle>0){
       hDistToTrack1mu_usedHits->Fill(distUsed,1);
-				       //fRecParam->GetRho(i),1);
-	//	std::cout<<"hits fill"<<std::endl;
-	//      }
+      //fRecParam->GetRho(i),1);
+      //	std::cout<<"hits fill"<<std::endl;
+      //      }
+      
+      hDistToTrack_usedHits->Fill(fRecParam->GetRho(i),1);
+      
+      hDebugRhoFedor->Fill(sqrt(pow(xyzHit.X(),2)+pow(xyzHit.Y(),2)+pow(xyzHit.Z(),2)),1);
+      
+      //study chi2 vs Rho
+      rhoAvg+=fRecParam->GetRho(i);
+      if (fRecParam->GetRho(i)>rhoMax) rhoMax=fRecParam->GetRho(i);
+      
+      //experimental time:
+      int impID=fRecParam->GetImpulseNumber(i);
+      float Texp=fEvent->GetImpulseTime(impID);
+      
+      int magNum=-1;
+      
+      for (int iMCch=0; iMCch<fMCEvent->GetChannelN(); iMCch++){
+	for (int iPulse=0; iPulse<fMCEvent->GetHitChannel(iMCch)->GetPulseN(); iPulse++){
+	  if (Texp==fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetTime()) magNum=fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetMagic();
+	}
+      }
+      
+      if (magNum==1) hMagNum_usedHits->Fill(0.5,1);
+      if (magNum!=1&&magNum!=-1) hMagNum_usedHits->Fill(1.5,1);
+      if (magNum==-1) hMagNum_usedHits->Fill(2.5,1);
+      
+      T0=Texp-Tres-Tprop;
+      //std::cout<<"T0 from channel "<<nch<<"  and impulse "<<impID<<" :   "<<T0<<std::endl;
     }
-    hDistToTrack_usedHits->Fill(distUsed,1);
-				//fRecParam->GetRho(i),1);
     
-    //study chi2 vs Rho
-    rhoAvg+=fRecParam->GetRho(i);
-    if (fRecParam->GetRho(i)>rhoMax) rhoMax=fRecParam->GetRho(i);
+    rhoAvg=rhoAvg/fRecParam->GetNhit();
+    hChi2_rhoAvg->Fill(fRecParam->GetFuncValue(),rhoAvg,1);
+    hChi2_rhoMax->Fill(fRecParam->GetFuncValue(),rhoMax,1);
     
-    //experimental time:
-    int impID=fRecParam->GetImpulseNumber(i);
-    float Texp=fEvent->GetImpulseTime(impID);
-
-    int magNum=-1;
+    float timeOfOMHit_estimate=T0+getTimeEstimate_ns(tZeroPoint,trackDirection, xyzOM);
     
-    for (int iMCch=0; iMCch<fMCEvent->GetChannelN(); iMCch++){
-      for (int iPulse=0; iPulse<fMCEvent->GetHitChannel(iMCch)->GetPulseN(); iPulse++){
-	if (Texp==fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetTime()) magNum=fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetMagic();
+    //here one should look at BMCEvent or BEvent
+    //loop over hits
+    float timeOfOMHit_actual=-1;
+    int nImpulseInCalibChan=0;
+    
+    for (int i=0; i<fEvent->GetTotImpulses(); i++) {
+      if (calibChanID==fEvent->GetImpulse(i)->GetChannelID()){
+	timeOfOMHit_actual=fEvent->GetImpulseTime(i);
+	nImpulseInCalibChan++;
       }
     }
-
-    if (magNum==1) hMagNum_usedHits->Fill(0.5,1);
-    if (magNum!=1&&magNum!=-1) hMagNum_usedHits->Fill(1.5,1);
-    if (magNum==-1) hMagNum_usedHits->Fill(2.5,1);
     
-    T0=Texp-Tres-Tprop;
-    //std::cout<<"T0 from channel "<<nch<<"  and impulse "<<impID<<" :   "<<T0<<std::endl;
-  }
-
-  rhoAvg=rhoAvg/fRecParam->GetNhit();
-  hChi2_rhoAvg->Fill(fRecParam->GetFuncValue(),rhoAvg,1);
-  hChi2_rhoMax->Fill(fRecParam->GetFuncValue(),rhoMax,1);
-  
-  float timeOfOMHit_estimate=T0+getTimeEstimate_ns(tZeroPoint,trackDirection, xyzOM);
-
-  //here one should look at BMCEvent or BEvent
-  //loop over hits
-  float timeOfOMHit_actual=-1;
-  int nImpulseInCalibChan=0;
-  
-  for (int i=0; i<fEvent->GetTotImpulses(); i++) {
-    if (calibChanID==fEvent->GetImpulse(i)->GetChannelID()){
-      timeOfOMHit_actual=fEvent->GetImpulseTime(i);
-      nImpulseInCalibChan++;
+    if (nImpulseInCalibChan==1) hTimeDiff->Fill(timeOfOMHit_estimate-timeOfOMHit_actual,1);  
+    
+    //DEBUG
+    for (int i=0; i<fRecParam->GetNhit(); i++){
+      int timeOfUsedHit=fEvent->GetImpulseTime(fRecParam->GetImpulseNumber(i));
+      int usedChanID=fRecParam->GetNchGeom(i);
+      TVector3 xyzUsedHit(fGeomTel->At(usedChanID)->GetX(),fGeomTel->At(usedChanID)->GetY(),fGeomTel->At(usedChanID)->GetZ());
+      float timeOfUsedHit_theor=T0+getTimeEstimate_ns(tZeroPoint, trackDirection, xyzUsedHit);
+      hTimeDiff_usedHits->Fill(timeOfUsedHit_theor-timeOfUsedHit,1);
     }
   }
-  
-  if (nImpulseInCalibChan==1) hTimeDiff->Fill(timeOfOMHit_estimate-timeOfOMHit_actual,1);  
-
-  //DEBUG
-  for (int i=0; i<fRecParam->GetNhit(); i++){
-    int timeOfUsedHit=fEvent->GetImpulseTime(fRecParam->GetImpulseNumber(i));
-    int usedChanID=fRecParam->GetNchGeom(i);
-    TVector3 xyzUsedHit(fGeomTel->At(usedChanID)->GetX(),fGeomTel->At(usedChanID)->GetY(),fGeomTel->At(usedChanID)->GetZ());
-    float timeOfUsedHit_theor=T0+getTimeEstimate_ns(tZeroPoint, trackDirection, xyzUsedHit);
-    hTimeDiff_usedHits->Fill(timeOfUsedHit_theor-timeOfUsedHit,1);
-  }
-  
   return kTRUE;
   
 }
@@ -510,17 +543,17 @@ int BMyRecoReco::RunMCAnalysis()
   for (int i=0; i<nChans; i++){
     bool useChan=false;
     for (int iP=0; iP<fMCEvent->GetHitChannel(i)->GetPulseN(); iP++){
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()+1000==1) {
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()+1000==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
 	useChan=true;
 	nDirectPulses++;
 	nPulses++;
       }
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()>1) {
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()>1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
 	//useChan=true;
 	nShowerPulses++;
 	nPulses++;
       }
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()==1) {
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
 	nNoisePulses++;
 	nPulses++;
       }
