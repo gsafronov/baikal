@@ -66,6 +66,7 @@ class BMyRecoMC : public MTask
   TH1F* hYieldVsAmpl_ref;
 
   TH1F* hChanOffset[192];
+  TH1F* hClusterOffsets;
 
   TH2F* hDebugTimeShowerHits;  
   

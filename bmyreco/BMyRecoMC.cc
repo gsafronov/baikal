@@ -62,13 +62,15 @@ BMyRecoMC::BMyRecoMC(string fname)
   hDiffReal_DiffEst=new TH2F("hDiffReal_DiffEst","hDiffReal_DiffEst",2000,-1000,1000,2000,-1000,1000);
   hPulsesPerChannel=new TH1F("hPulsesPerChannel","hPulsesPerChannel",10,0,10);
   hYieldVsAmpl_ref=new TH1F("hYieldVsAmpl_ref","hYieldVsAmpl_ref",50,1,11);
- 
+
   char tmp[100];
   for (int i=0; i<192; i++){
     sprintf(tmp,"hChanOffset_%d",i+1);
     hChanOffset[i]=new TH1F(tmp,tmp,2000,-1000,1000);
   }
 
+  hClusterOffsets=new TH1F("hClusterOffsets","hClusterOffsets",192,0.5,192.5);
+  
   hDebugTimeShowerHits=new TH2F("hDebugTimeShowerHits","hDebugTimeShowerHits",5000,0,5000,20,0,20);
   
   hMuonN=new TH1F("hMuonN","hMuonN",200,0,200);
@@ -227,16 +229,26 @@ Int_t BMyRecoMC::PostProcess()
     ffOffset->SetParameter(2,hChanOffset[i]->GetRMS());
 
     float fitMargin=1.5;
-    hChanOffset[i]->Fit(ffOffset,"Q","",meanEst-fitMargin*rmsEst,meanEst+fitMargin*rmsEst);
+    float fitMean=0;
+    float fitError=0;
+    if (hChanOffset[i]->Fit(ffOffset,"Q","",meanEst-fitMargin*rmsEst,meanEst+fitMargin*rmsEst)){
+      fitMean=ffOffset->GetParameter(1);
+      fitError=ffOffset->GetParError(1);
+    }
 
     std::cout<<"time offset for channel #"<<i+1<<" :    "
-	     <<ffOffset->GetParameter(1)<<" +- "
-	     <<ffOffset->GetParError(1)<<std::endl;
+	     <<fitMean<<" +- "
+	     <<fitError<<std::endl;
     hChanOffset[i]->Write();
+
+    hClusterOffsets->SetBinContent(i+1,fitMean);
+    hClusterOffsets->SetBinError(i+1,fitError);
   }
   
   fOUT->cd();
 
+  
+  hClusterOffsets->Write();
   hDebugTimeShowerHits->Write();
   
   hMuonN->Write();
