@@ -74,6 +74,8 @@ class BMyRecoMC : public MTask
   TH2F* hPropagation_z_vs_time;
   TH2F* hDelaySeed_z_vs_delay;
   TH2F* hDelaySeedAnalytic_z_vs_delay;
+  TH2F* hStringDelaySeed_z_vs_delay[8];
+  TH2F* hStringDelaySeedAn_z_vs_delay[8];
   
   TH1F* hMuonN;
   TH1F* hTotalMuonN;
@@ -93,6 +95,7 @@ class BMyRecoMC : public MTask
   TH2F* hMapOfHits3;  
   TH2F* hGeom;
   TH1F* hPulseTime;
+
   
  public:
   BMyRecoMC(string fname);

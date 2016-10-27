@@ -69,6 +69,13 @@ BMyRecoMC::BMyRecoMC(string fname)
     hChanOffset[i]=new TH1F(tmp,tmp,2000,-1000,1000);
   }
 
+  for (int i=0; i<8; i++){
+    sprintf(tmp,"z_vs_delay_string%d",i+1);
+    hStringDelaySeed_z_vs_delay[i]=new TH2F(tmp,tmp,1000,-500,500,1000,-500,500);
+    sprintf(tmp,"an_z_vs_delay_string%d",i+1);
+    hStringDelaySeedAn_z_vs_delay[i]=new TH2F(tmp,tmp,1000,-500,500,1000,-500,500);
+  }    
+  
   hClusterOffsets=new TH1F("hClusterOffsets","hClusterOffsets",192,0.5,192.5);
   
   hDebugTimeShowerHits=new TH2F("hDebugTimeShowerHits","hDebugTimeShowerHits",5000,0,5000,20,0,20);
@@ -76,7 +83,7 @@ BMyRecoMC::BMyRecoMC(string fname)
   hSeedChanID_dr_vs_response=new TH2F("hSeedChanID_dr_vs_response","hSeedChanID_dr_vs_response",192,0.5,192.5,192,0.5,192.5);
   hSeedChanID_dr_minus_response=new TH1F("hSeedChanID_dr_minus_response","hSeedChanID_dr_minus_response",384,-192.5,192.5);
   hDelaySeed_z_vs_delay=new TH2F("hDelaySeed_z_vs_delay","hDelaySeed_z_vs_delay",1000,-500,500,2000,-1000,1000);
-  hDelaySeedAnalytic_z_vs_delay=new TH2F("hDelaySeedAnalytic_z_vs_delay","hDelaySeedAnalytic_z_vs_delay",1000,-500,500,2000,-1000,1000);
+  hDelaySeedAnalytic_z_vs_delay=new TH2F("hDelaySeedAnalytic_z_vs_delay","hDelaySeedAnalytic_z_vs_delay",1500,-500,1000,2000,-1000,1000);
   
   hMuonN=new TH1F("hMuonN","hMuonN",200,0,200);
   hTotalMuonN=new TH1F("hTotalMuonN","hTotalMuonN",100,0,100);
@@ -256,9 +263,16 @@ Int_t BMyRecoMC::PostProcess()
     hClusterOffsets->SetBinContent(i+1,fitMean);
     hClusterOffsets->SetBinError(i+1,fitError);
   }
+
   
   fOUT->cd();
 
+  fOUT->mkdir("string_seeding");
+  fOUT->cd("string_seeding");
+  for (int i=0; i<8; i++){
+    hStringDelaySeed_z_vs_delay[i]->Write();
+    hStringDelaySeedAn_z_vs_delay[i]->Write();
+  }
   
   hClusterOffsets->Write();
   hDebugTimeShowerHits->Write();
@@ -715,6 +729,21 @@ int BMyRecoMC::RunClusteringAnalysis()
   int seedChan_response=0;
   float seedChanTime_dr=-1;
   float seedChanTime_response=-1;
+
+  float stringMinDR[8];
+  float stringResponse_max[8];
+  int stringSeedChan_dr[8];
+  int stringSeedChan_response[8];
+  float stringSeedChanTime_dr[8];
+  float stringSeedChanTime_response[8];
+  for (int i=0; i<8; i++){
+    stringMinDR[i]=1000;
+    stringResponse_max[i]=0;
+    stringSeedChan_dr[i]=0;
+    stringSeedChan_response[i]=0;
+    stringSeedChanTime_dr[i]=0;
+    stringSeedChanTime_response[i]=0;
+  }
   
   int nChans=fMCEvent->GetChannelN();
   for (int i=0; i<nChans; i++){
@@ -741,8 +770,15 @@ int BMyRecoMC::RunClusteringAnalysis()
       minDR=omDR;
       seedChan_dr=idch;
       seedChanTime_dr=timeOfHit;
-      
     }
+
+    int iString=floor(idch/24);
+    if (omDR<stringMinDR[iString]){
+      stringMinDR[iString]=omDR;
+      stringSeedChan_dr[iString]=idch;
+      stringSeedChanTime_dr[iString]=timeOfHit;
+    }
+    
 
     //reconstruct response in the paticular channel
     float response=0;
@@ -803,35 +839,54 @@ int BMyRecoMC::RunClusteringAnalysis()
   //plot propagation properties
   //define time of hit in particular channel: time of earliest pulse
   //std::cout<<(primThetaRad/M_PI)*180<<"   "<<seedChan_response%24<<std::endl;
-  if ((primThetaRad/M_PI)*180<(180-55)&&(primThetaRad/M_PI)*180>(180-65)&&seedChan_dr%24>10&&seedChan_dr%24<14){
+  if ((primThetaRad/M_PI)*180<(180-43)&&(primThetaRad/M_PI)*180>(180-48)){
+      //&&seedChan_dr%24>10&&seedChan_dr%24<14){
     for (int iChan=0; iChan<nChans; iChan++){
       int idch=fMCEvent->GetHitChannel(iChan)->GetChannelID()-1;
       idch=24*floor(idch/24)+(24-idch%24);
       idch=idch-1;
       
       if (idch==seedChan_dr) continue;
-
+      int iString=floor(idch/24);
+      if (idch==stringSeedChan_dr[iString]) continue;
+      
       float timeOfTrackHit=-1;
       for (int iPu=0; iPu<fMCEvent->GetHitChannel(iChan)->GetPulseN(); iPu++){
 	if (fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetMagic()==1) continue;
 	if (timeOfTrackHit==-1) timeOfTrackHit=fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetTime();
       }
+      if (timeOfTrackHit==-1) continue;
       TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
       
       hDelaySeed_z_vs_delay->Fill(timeOfTrackHit-seedChanTime_dr,chanXYZ.Z()-fGeomTel->At(seedChan_dr)->GetZ(),1);
+      
+      hStringDelaySeed_z_vs_delay[iString]->Fill(timeOfTrackHit-stringSeedChanTime_dr[iString],
+							   chanXYZ.Z()-fGeomTel->At(stringSeedChan_dr[iString])->GetZ(),1);
     }
         
   }
 
   //do the analytic calculation of propagation
   //calculate distance to zero:
+
+  //  TVector3 genVecAn(-sin(acos(0.6)),0,-0.6);
+  //  TVector3 inPoTrackAn(60,5,200);
+  
   TVector3 zero(0,0,0);
   float rho=getTrackDistanceToOM(inPoTrack,genVec,zero);
-  if ((primThetaRad/M_PI)*180<(180)&&(primThetaRad/M_PI)*180>(180-5)&&rho<20){
+  if ((primThetaRad/M_PI)*180<(180-43)&&(primThetaRad/M_PI)*180>(180-48)){
       //find analytically the point of closest approach among all modules:
       float seedAnDR=1000;
       float seedAnChan=0;
       float seedAnTime=-1;
+      float stringSeedAnDR[8];
+      float stringSeedAnChan[8];
+      float stringSeedAnTime[8];
+      for (int j=0; j<8; j++){
+	stringSeedAnDR[j]=1000;
+	stringSeedAnChan[j]=0;
+	stringSeedAnTime[j]=-1;
+      }
       for (int i=0; i<192; i++){
 	TVector3 chanXYZ(fGeomTel->At(i)->GetX(),fGeomTel->At(i)->GetY(),fGeomTel->At(i)->GetZ());
 	float dr=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
@@ -840,16 +895,27 @@ int BMyRecoMC::RunClusteringAnalysis()
 	  seedAnChan=i;
 	  seedAnTime=getTimeEstimate_ns(inPoTrack,genVec,chanXYZ);
 	}
-      }
-      
-      //now calculate time for modules which are within 30m from the track
-      for (int i=0; i<192; i++){
-	TVector3 chanXYZ(fGeomTel->At(i)->GetX(),fGeomTel->At(i)->GetY(),fGeomTel->At(i)->GetZ());
-	float dr=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
-	if (dr<30){
-	  hDelaySeedAnalytic_z_vs_delay->Fill(getTimeEstimate_ns(inPoTrack,genVec,chanXYZ)-seedAnTime,chanXYZ.Z()-fGeomTel->At(seedAnChan)->GetZ(),1);
+	int iStr=floor(i/24);
+	if (dr<stringSeedAnDR[iStr]){
+	  stringSeedAnDR[iStr]=dr;
+	  stringSeedAnChan[iStr]=i;
+	  stringSeedAnTime[iStr]=getTimeEstimate_ns(inPoTrack,genVec,chanXYZ);
 	}
       }
-    }
+      
+      
+      //      std::cout<<seedAnDR<<"  "<<seedAnChan<<"  "<<std::endl;
+      //now calculate time for modules which are within 30m from the track
+      for (int i=0; i<192; i++){
+	int iString=floor(i/24);
+	TVector3 chanXYZ(fGeomTel->At(i)->GetX(),fGeomTel->At(i)->GetY(),fGeomTel->At(i)->GetZ());
+	float dr=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
+	if (dr<40){
+	  hDelaySeedAnalytic_z_vs_delay->Fill(getTimeEstimate_ns(inPoTrack,genVec,chanXYZ)-seedAnTime,chanXYZ.Z()-fGeomTel->At(seedAnChan)->GetZ(),1);
+	  hStringDelaySeedAn_z_vs_delay[iString]->Fill(getTimeEstimate_ns(inPoTrack,genVec,chanXYZ)-stringSeedAnTime[iString],
+							   chanXYZ.Z()-fGeomTel->At(stringSeedAnChan[iString])->GetZ(),1);
+	}
+      }
+  }
     
 }
