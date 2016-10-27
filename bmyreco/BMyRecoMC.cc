@@ -72,6 +72,11 @@ BMyRecoMC::BMyRecoMC(string fname)
   hClusterOffsets=new TH1F("hClusterOffsets","hClusterOffsets",192,0.5,192.5);
   
   hDebugTimeShowerHits=new TH2F("hDebugTimeShowerHits","hDebugTimeShowerHits",5000,0,5000,20,0,20);
+
+  hSeedChanID_dr_vs_response=new TH2F("hSeedChanID_dr_vs_response","hSeedChanID_dr_vs_response",192,0.5,192.5,192,0.5,192.5);
+  hSeedChanID_dr_minus_response=new TH1F("hSeedChanID_dr_minus_response","hSeedChanID_dr_minus_response",384,-192.5,192.5);
+  hDelaySeed_z_vs_delay=new TH2F("hDelaySeed_z_vs_delay","hDelaySeed_z_vs_delay",1000,-500,500,2000,-1000,1000);
+  hDelaySeedAnalytic_z_vs_delay=new TH2F("hDelaySeedAnalytic_z_vs_delay","hDelaySeedAnalytic_z_vs_delay",1000,-500,500,2000,-1000,1000);
   
   hMuonN=new TH1F("hMuonN","hMuonN",200,0,200);
   hTotalMuonN=new TH1F("hTotalMuonN","hTotalMuonN",100,0,100);
@@ -129,7 +134,14 @@ Int_t BMyRecoMC::Process()
   // std::cout<<"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<WE ARE IN BMyReco::Process"<<std::endl;
   if (iEvent%10000==0) std::cout<<"eventNumber: "<<iEvent<<std::endl;
 
+  /*
+  fPrimThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
+  fPrimPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
+
+  fGenVec=TVector3(fMCEvent->GetTrack(0)->GetX()-500*genVec.X(), fMCEvent->GetTrack(0)->GetY()-500*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-500*genVec.Z());
+  */
   RunMCAnalysis();
+  RunClusteringAnalysis();
   
   int nMuon=fMCEvent->GetMuonsN();
   hMuonN->Fill(nMuon,1);
@@ -228,13 +240,13 @@ Int_t BMyRecoMC::PostProcess()
     ffOffset->SetParameter(1,hChanOffset[i]->GetMean());
     ffOffset->SetParameter(2,hChanOffset[i]->GetRMS());
 
-    float fitMargin=1.5;
+    float fitMargin=2.0;
     float fitMean=0;
     float fitError=0;
-    if (hChanOffset[i]->Fit(ffOffset,"Q","",meanEst-fitMargin*rmsEst,meanEst+fitMargin*rmsEst)){
-      fitMean=ffOffset->GetParameter(1);
-      fitError=ffOffset->GetParError(1);
-    }
+    hChanOffset[i]->Fit(ffOffset,"Q","",meanEst-fitMargin*rmsEst,meanEst+fitMargin*rmsEst);
+    fitMean=ffOffset->GetParameter(1);
+    fitError=ffOffset->GetParError(1);
+    
 
     std::cout<<"time offset for channel #"<<i+1<<" :    "
 	     <<fitMean<<" +- "
@@ -250,6 +262,10 @@ Int_t BMyRecoMC::PostProcess()
   
   hClusterOffsets->Write();
   hDebugTimeShowerHits->Write();
+  hSeedChanID_dr_vs_response->Write();
+  hSeedChanID_dr_minus_response->Write();
+  hDelaySeed_z_vs_delay->Write();
+  hDelaySeedAnalytic_z_vs_delay->Write();
   
   hMuonN->Write();
   hTotalMuonN->Scale(pow(hTotalMuonN->GetEntries(),-1));
@@ -389,11 +405,36 @@ float BMyRecoMC::getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction,
 
   float cosAlpha=scalarProd/(diff.Mag()*absDir);
 
-  cosAlpha=round(cosAlpha*10000000)*pow(10000000,-1); 
+  //cosAlpha=round(cosAlpha*10000000)*pow(10000000,-1); 
 
+  if (cosAlpha*cosAlpha>1) cosAlpha=1;
+  
   float dist=diff.Mag()*sqrt(1-cosAlpha*cosAlpha);
 
   return dist;
+}
+
+
+TVector3 BMyRecoMC::getTrackClosestApproach(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM)
+{
+  TVector3 diff(xyzOM.X()-initialPoint.X(),xyzOM.Y()-initialPoint.Y(),xyzOM.Z()-initialPoint.Z());
+  
+  float absDir=direction.Mag();
+
+  float scalarProd=diff.Dot(direction);
+
+  float cosAlpha=scalarProd/(diff.Mag()*absDir);
+
+  float distAdd=diff.Mag()*cosAlpha;
+
+  TVector3 poca(initialPoint.X()+distAdd*direction.X(),
+		initialPoint.Y()+distAdd*direction.Y(),
+		initialPoint.Z()+distAdd*direction.Z());
+
+  return poca;
+  
+  //cosAlpha=round(cosAlpha*10000000)*pow(10000000,-1); 
+
 }
 
 //return time of propagation from arbitrary point A on trajectory with direction s to coordinates M
@@ -405,7 +446,9 @@ float BMyRecoMC::getTimeEstimate_ns(TVector3 A, TVector3 s, TVector3 M)
   //  std::cout<<"AM: "<<modAM<<"  s: "<<modS<<std::endl;
 
   float cosAlpha=AM.Dot(s)/(modAM*modS);
-  cosAlpha=round(cosAlpha*1000000)*pow(1000000,-1); //rounding to avoid nan in the next line
+  //  cosAlpha=round(cosAlpha*1000000)*pow(1000000,-1); //rounding to avoid nan in the next line
+  if (cosAlpha*cosAlpha>1) cosAlpha=1;
+
   float sinAlpha=sqrt(1-pow(cosAlpha,2)); 
 
   //water refraction index
@@ -456,10 +499,10 @@ int BMyRecoMC::RunMCAnalysis()
 		  sin(primThetaRad)*sin(primPhiRad),
 		  cos(primThetaRad));
 
-  TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-1000*genVec.X(), fMCEvent->GetTrack(0)->GetY()-1000*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-1000*genVec.Z());
+  TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-500*genVec.X(), fMCEvent->GetTrack(0)->GetY()-500*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-500*genVec.Z());
   
   
-  if (fMCEvent->GetResponseMuonsN()!=1) return 0;
+  if (fMCEvent->GetResponseMuonsN()!=1||fMCEvent->GetTrack(0)->GetMuonEnergy()<1000) return 0;
 
   bool useEventForCalib=false;
 
@@ -477,7 +520,7 @@ int BMyRecoMC::RunMCAnalysis()
 	  if(fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetAmplitude()>AMPL) countChan=true;
 	}
 	
-	if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()==-999&&iAmpl==5){
+	if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()==-999&&iAmpl==10){
 	  countChanDirect=true;
 	}
       }
@@ -649,4 +692,164 @@ int BMyRecoMC::RunMCAnalysis()
   
   
   return 0;
+}
+
+int BMyRecoMC::RunClusteringAnalysis()
+{
+  //find the OM of closest approach
+  
+  if (fMCEvent->GetResponseMuonsN()!=1) return 0;
+
+  float primThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
+  float primPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
+  
+  TVector3 genVec(sin(primThetaRad)*cos(primPhiRad),
+		  sin(primThetaRad)*sin(primPhiRad),
+		  cos(primThetaRad));
+  
+  TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-500*genVec.X(), fMCEvent->GetTrack(0)->GetY()-500*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-500*genVec.Z());
+
+  float minDR=1000;
+  float response_max=0;
+  int seedChan_dr=0;
+  int seedChan_response=0;
+  float seedChanTime_dr=-1;
+  float seedChanTime_response=-1;
+  
+  int nChans=fMCEvent->GetChannelN();
+  for (int i=0; i<nChans; i++){
+
+    int idch=fMCEvent->GetHitChannel(i)->GetChannelID()-1;
+    idch=24*floor(idch/24)+(24-idch%24);
+    idch=idch-1;
+
+    TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
+
+    float omDR=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
+    
+    //check which hits are there at the channel
+    bool hasDirectHit;
+    bool hasShowerHit;
+    float timeOfHit=-1;
+    for (int iPu=0; iPu<fMCEvent->GetHitChannel(i)->GetPulseN(); iPu++){
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()==-999) hasDirectHit=true;
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()%1000==1) hasShowerHit=true;
+      if (timeOfHit==-1&&fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()!=1) timeOfHit=fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetTime();
+    }
+    
+    if (omDR<minDR){
+      minDR=omDR;
+      seedChan_dr=idch;
+      seedChanTime_dr=timeOfHit;
+      
+    }
+
+    //reconstruct response in the paticular channel
+    float response=0;
+    float time=-1;
+    for (int iPu=0; iPu<fMCEvent->GetHitChannel(i)->GetPulseN(); iPu++){
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()!=1){
+      //||fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GeteMagic()%1000==1){
+	response+=fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetAmplitude();
+	if (time==-1) time=fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetTime();
+      }
+    }
+
+    //reconstruct response in one of channels on the same string
+    //next: try to check reconstruct response in channels with DR<20M (e.g.)
+    float response_above_ss=0;
+    float response_below_ss=0;
+    float time_above_ss=-1;
+    float time_below_ss=-1;
+    for (int k=0; k<nChans; k++){
+      int idchNext=fMCEvent->GetHitChannel(k)->GetChannelID()-1;
+      idchNext=24*floor(idchNext/24)+(24-idchNext%24);
+      idchNext=idchNext-1;
+      if (idchNext==idch-1){
+	for (int iPu=0; iPu<fMCEvent->GetHitChannel(k)->GetPulseN(); iPu++){
+	  if (fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetMagic()!=1){
+	    //||fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GeteMagic()%1000==1){
+	    response_above_ss+=fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetAmplitude();
+	    if (time_above_ss==-1) time_above_ss=fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetTime();
+	  }
+	}
+      }
+      if (idchNext==idch+1){
+	for (int iPu=0; iPu<fMCEvent->GetHitChannel(k)->GetPulseN(); iPu++){
+	  if (fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetMagic()!=1){
+	    //||fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GeteMagic()%1000==1){
+	    response_below_ss+=fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetAmplitude();
+	    if (time_below_ss==-1) time_below_ss=fMCEvent->GetHitChannel(k)->GetPulse(iPu)->GetTime();
+	  }
+	}
+      }
+    }
+    
+    //    std::cout<<response<<"   "<<response_below_ss<<std::endl;
+    
+    if (response+response_below_ss+response_above_ss>response_max) {
+      response_max=response+response_below_ss+response_above_ss;
+      seedChan_response=idch;
+      seedChanTime_response=time;
+      
+    }
+  }
+
+  if (response_max!=0&&minDR!=1000) {
+    hSeedChanID_dr_minus_response->Fill(seedChan_dr-seedChan_response,1);
+    hSeedChanID_dr_vs_response->Fill(seedChan_dr,seedChan_response,1);
+  }
+
+  //plot propagation properties
+  //define time of hit in particular channel: time of earliest pulse
+  //std::cout<<(primThetaRad/M_PI)*180<<"   "<<seedChan_response%24<<std::endl;
+  if ((primThetaRad/M_PI)*180<(180-55)&&(primThetaRad/M_PI)*180>(180-65)&&seedChan_dr%24>10&&seedChan_dr%24<14){
+    for (int iChan=0; iChan<nChans; iChan++){
+      int idch=fMCEvent->GetHitChannel(iChan)->GetChannelID()-1;
+      idch=24*floor(idch/24)+(24-idch%24);
+      idch=idch-1;
+      
+      if (idch==seedChan_dr) continue;
+
+      float timeOfTrackHit=-1;
+      for (int iPu=0; iPu<fMCEvent->GetHitChannel(iChan)->GetPulseN(); iPu++){
+	if (fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetMagic()==1) continue;
+	if (timeOfTrackHit==-1) timeOfTrackHit=fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetTime();
+      }
+      TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
+      
+      hDelaySeed_z_vs_delay->Fill(timeOfTrackHit-seedChanTime_dr,chanXYZ.Z()-fGeomTel->At(seedChan_dr)->GetZ(),1);
+    }
+        
+  }
+
+  //do the analytic calculation of propagation
+  //calculate distance to zero:
+  TVector3 zero(0,0,0);
+  float rho=getTrackDistanceToOM(inPoTrack,genVec,zero);
+  if ((primThetaRad/M_PI)*180<(180)&&(primThetaRad/M_PI)*180>(180-5)&&rho<20){
+      //find analytically the point of closest approach among all modules:
+      float seedAnDR=1000;
+      float seedAnChan=0;
+      float seedAnTime=-1;
+      for (int i=0; i<192; i++){
+	TVector3 chanXYZ(fGeomTel->At(i)->GetX(),fGeomTel->At(i)->GetY(),fGeomTel->At(i)->GetZ());
+	float dr=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
+	if (dr<seedAnDR){
+	  seedAnDR=dr;
+	  seedAnChan=i;
+	  seedAnTime=getTimeEstimate_ns(inPoTrack,genVec,chanXYZ);
+	}
+      }
+      
+      //now calculate time for modules which are within 30m from the track
+      for (int i=0; i<192; i++){
+	TVector3 chanXYZ(fGeomTel->At(i)->GetX(),fGeomTel->At(i)->GetY(),fGeomTel->At(i)->GetZ());
+	float dr=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
+	if (dr<30){
+	  hDelaySeedAnalytic_z_vs_delay->Fill(getTimeEstimate_ns(inPoTrack,genVec,chanXYZ)-seedAnTime,chanXYZ.Z()-fGeomTel->At(seedAnChan)->GetZ(),1);
+	}
+      }
+    }
+    
 }

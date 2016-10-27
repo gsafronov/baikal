@@ -69,6 +69,11 @@ class BMyRecoMC : public MTask
   TH1F* hClusterOffsets;
 
   TH2F* hDebugTimeShowerHits;  
+  TH2F* hSeedChanID_dr_vs_response;
+  TH1F* hSeedChanID_dr_minus_response;
+  TH2F* hPropagation_z_vs_time;
+  TH2F* hDelaySeed_z_vs_delay;
+  TH2F* hDelaySeedAnalytic_z_vs_delay;
   
   TH1F* hMuonN;
   TH1F* hTotalMuonN;
@@ -94,6 +99,11 @@ class BMyRecoMC : public MTask
   ~BMyRecoMC();
   
  private:
+  //  TVector3 fGenVec;
+  //  TVector3 fInitialPoint;
+  //  float fPrimThetaRad;
+  //  float fPrimPhiRad;
+  
   std::vector<int> filterHits(float minAmpl);
   std::vector<float> getHitLocation(int hitID);
   float getDeltaT_ns(int hit1_id, int hit2_id);
@@ -101,7 +111,9 @@ class BMyRecoMC : public MTask
   std::vector<float> getDirection(int hit1_id, int hit2_id);
   
   int RunMCAnalysis();
+  int RunClusteringAnalysis();
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 xyzOM);
+  TVector3 getTrackClosestApproach(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 xyzOM);
   float getTimeEstimate_ns(TVector3 initialPoint, TVector3 trajectoryDirection, TVector3 pointInSpace);
 
   //counter
