@@ -71,12 +71,14 @@ BMyRecoMC::BMyRecoMC(string fname)
 
   for (int i=0; i<8; i++){
     sprintf(tmp,"z_vs_delay_string%d",i+1);
-    hStringDelaySeed_z_vs_delay[i]=new TH2F(tmp,tmp,1000,-500,500,1000,-500,500);
+    hStringDelaySeed_z_vs_delay[i]=new TH2F(tmp,tmp,100,-500,500,120,-300,300);
     sprintf(tmp,"an_z_vs_delay_string%d",i+1);
-    hStringDelaySeedAn_z_vs_delay[i]=new TH2F(tmp,tmp,1000,-500,500,1000,-500,500);
+    hStringDelaySeedAn_z_vs_delay[i]=new TH2F(tmp,tmp,100,-500,500,120,-300,300);
   }    
   
   hClusterOffsets=new TH1F("hClusterOffsets","hClusterOffsets",192,0.5,192.5);
+  hChannelSignalLength=new TH1F("hChannelSignalLength","hChannelSignalLength",10000,0,10000);
+  
   
   hDebugTimeShowerHits=new TH2F("hDebugTimeShowerHits","hDebugTimeShowerHits",5000,0,5000,20,0,20);
 
@@ -273,6 +275,9 @@ Int_t BMyRecoMC::PostProcess()
     hStringDelaySeed_z_vs_delay[i]->Write();
     hStringDelaySeedAn_z_vs_delay[i]->Write();
   }
+  fOUT->cd();
+  
+  hChannelSignalLength->Write();
   
   hClusterOffsets->Write();
   hDebugTimeShowerHits->Write();
@@ -515,7 +520,6 @@ int BMyRecoMC::RunMCAnalysis()
 
   TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-500*genVec.X(), fMCEvent->GetTrack(0)->GetY()-500*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-500*genVec.Z());
   
-  
   if (fMCEvent->GetResponseMuonsN()!=1||fMCEvent->GetTrack(0)->GetMuonEnergy()<1000) return 0;
 
   bool useEventForCalib=false;
@@ -565,6 +569,19 @@ int BMyRecoMC::RunMCAnalysis()
 
   for (int i=0; i<nChans; i++){
 
+    //plot "impulse length"
+    float timeFirst=10000000;
+    float timeLast=-10000000;
+    for (int iP=0; iP<fMCEvent->GetHitChannel(i)->GetPulseN(); iP++){
+      if ((fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()+1000==1||fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()%1000==1)&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()!=1){
+	if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetTime()<timeFirst) timeFirst=fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetTime();
+	if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetTime()>timeLast) timeLast=fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetTime();
+      }
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()%1000==2||fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()%1000==3) std::cout<<"strange"<<std::endl;
+    }
+    //if (timeLast-timeFirst>100) std::cout<<timeLast<<"   "<<timeFirst<<std::endl;
+    if (timeFirst!=10000000&&timeLast!=10000000) hChannelSignalLength->Fill(timeLast-timeFirst,1);
+    
     int idch=fMCEvent->GetHitChannel(i)->GetChannelID()-1;
     idch=24*floor(idch/24)+(24-idch%24);
     idch=idch-1;
@@ -757,10 +774,11 @@ int BMyRecoMC::RunClusteringAnalysis()
     float omDR=getTrackDistanceToOM(inPoTrack,genVec,chanXYZ);
     
     //check which hits are there at the channel
-    bool hasDirectHit;
-    bool hasShowerHit;
+    bool hasDirectHit=false;
+    bool hasShowerHit=false;
     float timeOfHit=-1;
     for (int iPu=0; iPu<fMCEvent->GetHitChannel(i)->GetPulseN(); iPu++){
+      if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetAmplitude()<1) continue;
       if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()==-999) hasDirectHit=true;
       if (fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()%1000==1) hasShowerHit=true;
       if (timeOfHit==-1&&fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetMagic()!=1) timeOfHit=fMCEvent->GetHitChannel(i)->GetPulse(iPu)->GetTime();
@@ -827,8 +845,14 @@ int BMyRecoMC::RunClusteringAnalysis()
       response_max=response+response_below_ss+response_above_ss;
       seedChan_response=idch;
       seedChanTime_response=time;
-      
     }
+
+    if (response>stringResponse_max[iString]){
+      stringResponse_max[iString]=response;
+      stringSeedChan_response[iString]=idch;
+      stringSeedChanTime_response[iString]=time;
+    }
+					      
   }
 
   if (response_max!=0&&minDR!=1000) {
@@ -839,7 +863,10 @@ int BMyRecoMC::RunClusteringAnalysis()
   //plot propagation properties
   //define time of hit in particular channel: time of earliest pulse
   //std::cout<<(primThetaRad/M_PI)*180<<"   "<<seedChan_response%24<<std::endl;
-  if ((primThetaRad/M_PI)*180<(180-43)&&(primThetaRad/M_PI)*180>(180-48)){
+  TVector3 zero(0,0,0);
+  float rho=getTrackDistanceToOM(inPoTrack,genVec,zero);
+  
+  if ((primThetaRad/M_PI)*180<(180-27)&&(primThetaRad/M_PI)*180>(180-33)&&rho<15&&rho>10){
       //&&seedChan_dr%24>10&&seedChan_dr%24<14){
     for (int iChan=0; iChan<nChans; iChan++){
       int idch=fMCEvent->GetHitChannel(iChan)->GetChannelID()-1;
@@ -853,15 +880,15 @@ int BMyRecoMC::RunClusteringAnalysis()
       float timeOfTrackHit=-1;
       for (int iPu=0; iPu<fMCEvent->GetHitChannel(iChan)->GetPulseN(); iPu++){
 	if (fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetMagic()==1) continue;
-	if (timeOfTrackHit==-1) timeOfTrackHit=fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetTime();
+	if (timeOfTrackHit==-1&&fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetAmplitude()>1) timeOfTrackHit=fMCEvent->GetHitChannel(iChan)->GetPulse(iPu)->GetTime();
       }
       if (timeOfTrackHit==-1) continue;
       TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
       
-      hDelaySeed_z_vs_delay->Fill(timeOfTrackHit-seedChanTime_dr,chanXYZ.Z()-fGeomTel->At(seedChan_dr)->GetZ(),1);
+      hDelaySeed_z_vs_delay->Fill(timeOfTrackHit-seedChanTime_response,chanXYZ.Z()-fGeomTel->At(seedChan_response)->GetZ(),1);
       
-      hStringDelaySeed_z_vs_delay[iString]->Fill(timeOfTrackHit-stringSeedChanTime_dr[iString],
-							   chanXYZ.Z()-fGeomTel->At(stringSeedChan_dr[iString])->GetZ(),1);
+      hStringDelaySeed_z_vs_delay[iString]->Fill(timeOfTrackHit-stringSeedChanTime_response[iString],
+							   chanXYZ.Z()-fGeomTel->At(stringSeedChan_response[iString])->GetZ(),1);
     }
         
   }
@@ -872,9 +899,8 @@ int BMyRecoMC::RunClusteringAnalysis()
   //  TVector3 genVecAn(-sin(acos(0.6)),0,-0.6);
   //  TVector3 inPoTrackAn(60,5,200);
   
-  TVector3 zero(0,0,0);
-  float rho=getTrackDistanceToOM(inPoTrack,genVec,zero);
-  if ((primThetaRad/M_PI)*180<(180-43)&&(primThetaRad/M_PI)*180>(180-48)){
+  
+  if ((primThetaRad/M_PI)*180<(180-43)&&(primThetaRad/M_PI)*180>(180-48)&&rho<15&&rho>10){
       //find analytically the point of closest approach among all modules:
       float seedAnDR=1000;
       float seedAnChan=0;

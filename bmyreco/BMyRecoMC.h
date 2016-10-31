@@ -67,7 +67,9 @@ class BMyRecoMC : public MTask
 
   TH1F* hChanOffset[192];
   TH1F* hClusterOffsets;
+  TH1F* hChannelSignalLength;
 
+  
   TH2F* hDebugTimeShowerHits;  
   TH2F* hSeedChanID_dr_vs_response;
   TH1F* hSeedChanID_dr_minus_response;
