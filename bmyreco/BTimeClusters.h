@@ -31,6 +31,7 @@ class BTimeClusters : public BFilter
   BEventMask *        fInputEventMask;
   BMCEvent *          fMCEvent;
   BEvent *            fEvent;
+  BGeomTel *          fGeomTel; 
   
   // MTask
   Int_t   PreProcess(MParList * pList);
@@ -40,9 +41,15 @@ class BTimeClusters : public BFilter
 
   TString     fInputMaskName;
   
+  std::vector<int> BuildStringCluster(int iString, std::vector<int> string_impulses);
+  std::vector<int> AddClusterImpulses(int max_ampl_id, int adjacent_id, std::vector<int> string_impulses, float window);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
+  
+  float cVacuum;
+  float cWater;
+
   
  public:
   BTimeClusters(const char *name = NULL, const char *title = NULL);
