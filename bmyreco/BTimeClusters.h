@@ -74,6 +74,10 @@ class BTimeClusters : public BFilter
   TH1F* hreco_hits;
 
   TH2F* h_strings_reco_vs_gen;
+  TH2F* h_strings_bevt_vs_gen;
+
+  TH2F* h_hitsPerString_reco_vs_gen;
+  TH2F* h_hitsPerString_bevt_vs_gen;
 
   //TH2F* h_spots_per_string;
   
