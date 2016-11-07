@@ -13,6 +13,7 @@
 
 class TH1F;
 class TH2F;
+class TProfile2D;
 class TFile;
 class TVector3;
 class TProfile;
@@ -57,6 +58,7 @@ class BTimeClusters : public BFilter
   float cWater;
 
   float fSignalCut_gen;
+  float fSeedSignalCut_gen;
   float fSignalCut_hotspot;
   float fGen_rhoCut;
   float fTimeMargin;
@@ -79,6 +81,14 @@ class BTimeClusters : public BFilter
   TH2F* h_hitsPerString_reco_vs_gen;
   TH2F* h_hitsPerString_bevt_vs_gen;
 
+  TH2F* h_smuons_polar_vs_rho;
+  TH2F* h_rcand_polar_vs_rho;
+  TH2F* h_rcandFrac_polar_vs_rho;
+  TProfile2D* h_strings_polar_vs_rho;
+  
+  TH1F* h_muon_energy;
+  TH1F* h_muon_energy_rcand;
+  
   //TH2F* h_spots_per_string;
   
  public:

@@ -17,7 +17,8 @@
  
 #include "TH1F.h"
 #include "TH2F.h"
-#include "TProfile.h" 
+#include "TProfile.h"
+#include "TProfile2D.h"
 #include "TFile.h"
 #include "TMath.h"
 #include "TVector3.h"
@@ -29,9 +30,9 @@ ClassImp(BTimeClusters);
 
 BTimeClusters::BTimeClusters(const char *name, const char *title)
 {
-  //chanIDs=chans;
+  // chanIDs=chans;
   // fMaskNoise=maskNoise;
-  //fInputMaskName ="";
+  // fInputMaskName ="";
   // fOutputMaskName="";
 
   fName  = name ? name : "BTimeClusters";
@@ -40,10 +41,11 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   cVacuum=0.3;
   cWater=cVacuum/1.33;
 
-  fSignalCut_gen=2;
+  fSignalCut_gen=0.3;
+  fSeedSignalCut_gen=2;
   fSignalCut_hotspot=1;
-  fGen_rhoCut=20;
-  fTimeMargin=50;
+  fGen_rhoCut=30;
+  fTimeMargin=100;
   
   //  fOutputMaskName = "AmplitudeFilterMask";
 
@@ -62,6 +64,15 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
 
   h_hitsPerString_reco_vs_gen=new TH2F("h_hitsPerString_reco_vs_gen","h_hitsPerString_reco_vs_gen",25,0,25,25,0,25);
   h_hitsPerString_bevt_vs_gen=new TH2F("h_hitsPerString_bevt_vs_gen","h_hitsPerString_bevt_vs_gen",25,0,25,25,0,25);
+
+  h_smuons_polar_vs_rho=new TH2F("h_smuons_polar_vs_rho","h_smuons_polar_vs_rho",10,0,100,25,0,250);
+  h_rcand_polar_vs_rho=new TH2F("h_rcand_polar_vs_rho","h_rcand_polar_vs_rho",10,0,100,25,0,250);
+  h_strings_polar_vs_rho=new TProfile2D("h_strings_polar_vs_rho","h_strings_polar_vs_rho",10,0,100,25,0,250,0,10000);
+
+  float energy_bins[37]={0,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,2000,2200,2400,2600,2800,3000,3250,3500,3750,4000,4500,5000,5500,6000,7000,8000,9000,10000};
+    
+  h_muon_energy=new TH1F("h_muon_energy","h_muon_energy",36,energy_bins);
+  h_muon_energy_rcand=new TH1F("h_muon_energy_rcand","h_muon_energy_rcand",36,energy_bins);
 }
 
 BTimeClusters::~BTimeClusters()
@@ -150,13 +161,14 @@ Bool_t BTimeClusters::Filter()
   float rho=getTrackDistanceToOM(inPoTrack, genVec, zero);
   
   if (fMCEvent->GetResponseMuonsN()!=1) return kFALSE;
-  //if (fMCEvent->GetTrack(0)->GetMuonEnergy()<1000||
-  if (rho>20) return kFALSE;
+  //  if (fMCEvent->GetTrack(0)->GetMuonEnergy()<1000||
+  //  if (rho>20) return kFALSE;
   /////////////////////////
   
   std::vector<int> string_impulses_gen[8];
   int noisePulseID=-100;
   int nHits=0;
+  bool hasLargeHit=false;
   for (int i=0; i<n_impulse; i++) {
     //    std::cout<<i<<std::endl;
     BMCHitChannel* fHitChan=fMCEvent->GetHitChannel(i);
@@ -173,7 +185,17 @@ Bool_t BTimeClusters::Filter()
       string_impulses_gen[iString].push_back(i);
       nHits++;
     }
+    if (signal>fSeedSignalCut_gen) hasLargeHit=true;
   }
+
+  if (rho<50){
+    h_muon_energy->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
+    if (nHits>=5&&hasLargeHit) h_muon_energy_rcand->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
+  }
+  
+  if (nHits>=5&&hasLargeHit) h_rcand_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,1);
+  h_smuons_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,1);
+  
   //  std::cout<<"popo"<<std::endl;
   h_hits_2pe->Fill(nHits,1);
   if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) h_1mu_hits_2pe->Fill(nHits,1);
@@ -190,6 +212,8 @@ Bool_t BTimeClusters::Filter()
     // std::cout<<"NEXT EVENT     firedStrings: "<<firedStrings<<std::endl;
     h_1mu_fired_strings_2pe->Fill(firedStrings,1);
   }
+
+  h_strings_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,firedStrings,1);
 
   //  std::cout<<"zoob"<<std::endl;
   //detector-level impulses, combine in strings
@@ -513,7 +537,13 @@ Int_t BTimeClusters::PostProcess()
       h_hitsPerString_reco_vs_gen->SetBinContent(i+1, j+1, (double)bico);
     }      
   }
-    
+
+  h_rcand_polar_vs_rho->Divide(h_rcand_polar_vs_rho,h_smuons_polar_vs_rho,1,1);
+
+  h_muon_energy->TH1F::Sumw2();
+  h_muon_energy_rcand->TH1F::Sumw2();
+  h_muon_energy_rcand->Divide(h_muon_energy_rcand, h_muon_energy,1,1,"B");
+  
   fOUT->cd();
   h_hits_per_string_2pe->Write();
   h_hits_2pe->Write();
@@ -526,9 +556,12 @@ Int_t BTimeClusters::PostProcess()
   hreco_hits->Write();
   h_strings_reco_vs_gen->Write();
   h_strings_bevt_vs_gen->Write();
+  h_smuons_polar_vs_rho->Write();
+  h_rcand_polar_vs_rho->Write();
+  h_strings_polar_vs_rho->Write();
 
-  h_hitsPerString_reco_vs_gen->Write();
-  h_hitsPerString_bevt_vs_gen->Write();
+  h_muon_energy->Write();
+  h_muon_energy_rcand->Write();
   fOUT->Close();
   return kTRUE;
 }
