@@ -67,6 +67,7 @@ class BTimeClusters : public BFilter
   TH1F* h_hits_per_string_2pe;
   TH1F* h_hits_2pe;
   TH1F* h_fired_strings_2pe;
+  
   TH1F* h_1mu_hits_per_string_2pe;
   TH1F* h_1mu_hits_2pe;
   TH1F* h_1mu_fired_strings_2pe;
@@ -88,6 +89,8 @@ class BTimeClusters : public BFilter
   
   TH1F* h_muon_energy;
   TH1F* h_muon_energy_rcand;
+
+  TH2F* h_hitSignal_reco_vs_gen;
   
   //TH2F* h_spots_per_string;
   
