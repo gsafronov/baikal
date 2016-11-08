@@ -175,6 +175,9 @@ Bool_t BTimeClusters::Filter()
   float maxAmplitude_gen=-1;
   int maxAmplitude_gen_chanID=-1;
 
+  std::vector<float> singlePulse_ampls;
+  std::vector<int> singlePulse_ids;
+
   for (int i=0; i<n_impulse; i++) {
     //    std::cout<<i<<std::endl;
     BMCHitChannel* fHitChan=fMCEvent->GetHitChannel(i);
@@ -185,6 +188,11 @@ Bool_t BTimeClusters::Filter()
     float signal=0;
     for (int k=0; k<fHitChan->GetPulseN(); k++){
       if (fHitChan->GetPulse(k)->GetMagic()!=1) signal+=fHitChan->GetPulse(k)->GetAmplitude();
+    }
+    //for gen-reco amplitude comparison
+    if (fHitChan->GetPulseN()==1&&fHitChan->GetPulse(0)->GetMagic()!=1){
+      singlePulse_ampls.push_back(fHitChan->GetPulse(0)->GetAmplitude());
+      singlePulse_ids.push_back(fHitChan->GetChannelID());
     }
     //    std::cout<<"impulse "<<i<<"   iString: "<<iString<<"   idch "<<idch<<"   bb  "<<fHitChan->GetChannelID()<<std::endl;
     if (signal>fSignalCut_gen) {
@@ -245,7 +253,10 @@ Bool_t BTimeClusters::Filter()
     nPulses_initial++;
     int iChannel=fEvent->GetImpulse(iPulse)->GetChannelID();
     string_impulses[int(floor(iChannel/24))].push_back(iPulse);
-
+    
+    for (int iGen=0; iGen<singlePulse_ids.size(); iGen++){
+      if (iChannel==singlePulse_ids[iGen]) h_hitSignal_reco_vs_gen->Fill(singlePulse_ids[iGen], fEvent->GetImpulse(iPulse)->GetAmplitude(),1); 
+    }
     if (fEvent->GetImpulse(iPulse)->GetAmplitude()>maxAmplitude_rec){
       maxAmplitude_rec=fEvent->GetImpulse(iPulse)->GetAmplitude();
       maxAmplitude_rec_chanID=iChannel;
@@ -253,8 +264,8 @@ Bool_t BTimeClusters::Filter()
     
   }
 
-  if (maxAmplitude_rec_chanID==maxAmplitude_gen_chanID) h_hitSignal_reco_vs_gen->Fill(maxAmplitude_gen,  maxAmplitude_rec,1);
-  else h_hitSignal_reco_vs_gen->Fill(-1,-1,1);
+  // if (maxAmplitude_rec_chanID==maxAmplitude_gen_chanID) h_hitSignal_reco_vs_gen->Fill(maxAmplitude_gen,  maxAmplitude_rec,1);
+  //else h_hitSignal_reco_vs_gen->Fill(-1,-1,1);
   
   // std::cout<<"bb"<<std::endl;
   int hitStrings=0;
