@@ -41,18 +41,25 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   cVacuum=0.3;
   cWater=cVacuum/1.33;
 
+  //define WP
+  fSignalCut_hotspot=2;
+  fTimeMargin=80;
+
+  //gen-level cuts
+  fGen_rhoCut=400;
+  fGen_minAngle=40;
+  fGen_maxAngle=90;
+
   fSignalCut_gen=0.3;
   fSeedSignalCut_gen=4;
-  fSignalCut_hotspot=1.5;
-  fGen_rhoCut=30;
-  fTimeMargin=100;
+
+  fEventCounter=0;
+  fNoiseOMs=0;
+  fSignalOMs=0;
   
   //  fOutputMaskName = "AmplitudeFilterMask";
 
   fOUT=new TFile("timeClustersDebug.root","RECREATE");
-  h_hits_per_string_2pe=new TH1F("h_hits_per_string_2pe","h_hits_per_string_2pe",25,0,25);
-  h_hits_2pe=new TH1F("h_hits_2pe","h_hits_2pe",200,0,200);
-  h_fired_strings_2pe=new TH1F("h_fired_strings_2pe","h_fired_strings_2pe",9,0,9);
   h_1mu_hits_per_string_2pe=new TH1F("h_1mu_hits_per_string_2pe","h_1mu_hits_per_string_2pe",25,0,25);
   h_1mu_hits_2pe=new TH1F("h_1mu_hits_2pe","h_1mu_hits_2pe",200,0,200);
   h_1mu_fired_strings_2pe=new TH1F("h_1mu_fired_strings_2pe","h_1mu_fired_strings_2pe",9,0,9);
@@ -72,10 +79,27 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   float energy_bins[37]={0,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,2000,2200,2400,2600,2800,3000,3250,3500,3750,4000,4500,5000,5500,6000,7000,8000,9000,10000};
     
   h_muon_energy=new TH1F("h_muon_energy","h_muon_energy",36,energy_bins);
+  h_muon_energy_rcand_gen=new TH1F("h_muon_energy_rcand_gen","h_muon_energy_rcand_gen",36,energy_bins);
   h_muon_energy_rcand=new TH1F("h_muon_energy_rcand","h_muon_energy_rcand",36,energy_bins);
+  
+  h_hitSignal_reco_vs_gen=new TH2F("h_hitSignal_reco_vs_gen","h_hitSignal_reco_vs_gen",22,-1,10,22,-1,10);
 
-  h_hitSignal_reco_vs_gen=new TH2F("h_hitSignal_reco_vs_gen","h_hitSignal_reco_vs_gen",11,-1,10,11,-1,10);
+  h_noiseFrac_clustered=new TH2F("h_noiseFrac_clustered","h_noiseFrac_clustered",20,0.5,10.5,20,0,400);
+  h_signalFrac_clustered=new TH2F("h_signalFrac_clustered","h_signalFrac_clustered",20,0.5,10.5,20,0,400);
+  
+  h_clusteredFrac_noise=new TH2F("h_clusteredFrac_noise","h_clusteredFrac_noise",20,0.5,10.5,20,0,400);
+  h_clusteredFrac_signal=new TH2F("h_clusteredFrac_signal","h_clusteredFrac_signal",20,0.5,10.5,20,0,400);
+
+  h_effpur_mult=new TH2F("h_effpur_mult","h_effpur_mult",20,0.5,10.5,20,0,400);
+  
+  h_clustered=new TH2F("h_clustered","h_clustered",20,0.5,10.5,20,0,400);
+    
+  hWhatIsOM=new TH1F("hWhatIsOM","hWhatIsOM",3,0,3);
+
+  hitMap_gen=new TH2F("hitMap_gen","hitMap_gen",9,0,9,25,0,25);
+  hitMap_det=new TH2F("hitMap_det","hitMap_det",9,0,9,25,0,25);
 }
+
 
 BTimeClusters::~BTimeClusters()
 {
@@ -125,7 +149,8 @@ Int_t BTimeClusters::PreProcess(MParList * pList)
 
 Bool_t BTimeClusters::Filter()
 {
-  
+  fEventCounter++;
+  if (fEventCounter%10000==0) std::cout<<fEventCounter<<std::endl;
   int n_impulse=fMCEvent->GetChannelN();
   /*
   for (int i=0; i<fEvent->GetTotImpulses(); i++){
@@ -163,11 +188,17 @@ Bool_t BTimeClusters::Filter()
   float rho=getTrackDistanceToOM(inPoTrack, genVec, zero);
   
   if (fMCEvent->GetResponseMuonsN()!=1) return kFALSE;
+  if (rho>fGen_rhoCut) return kFALSE;
+  if (180-fMCEvent->GetPrimaryParticlePolar()>fGen_maxAngle) return kFALSE;
+  if (180-fMCEvent->GetPrimaryParticlePolar()<fGen_minAngle) return kFALSE;
+  //  if (
+
   //  if (fMCEvent->GetTrack(0)->GetMuonEnergy()<1000||
   //  if (rho>20) return kFALSE;
   /////////////////////////
   
   std::vector<int> string_impulses_gen[8];
+  
   int noisePulseID=-100;
   int nHits=0;
   bool hasLargeHit=false;
@@ -178,6 +209,9 @@ Bool_t BTimeClusters::Filter()
   std::vector<float> singlePulse_ampls;
   std::vector<int> singlePulse_ids;
 
+  std::vector<int> noiseOMs_gen;
+  std::vector<int> signalOMs_gen;
+  
   for (int i=0; i<n_impulse; i++) {
     //    std::cout<<i<<std::endl;
     BMCHitChannel* fHitChan=fMCEvent->GetHitChannel(i);
@@ -185,20 +219,43 @@ Bool_t BTimeClusters::Filter()
     idch=24*floor(idch/24)+(24-idch%24);
     idch=idch-1;
     int iString=floor(idch/24);
+    hitMap_gen->Fill(iString, idch%24,1);
     float signal=0;
+    bool isNoise=false;
+    bool isSignal=false;
     for (int k=0; k<fHitChan->GetPulseN(); k++){
-      if (fHitChan->GetPulse(k)->GetMagic()!=1) signal+=fHitChan->GetPulse(k)->GetAmplitude();
+      if (fHitChan->GetPulse(k)->GetMagic()!=1) {
+	signal+=fHitChan->GetPulse(k)->GetAmplitude();
+	isSignal=true;
+      }
+      if (fHitChan->GetPulse(k)->GetMagic()==1) isNoise=true;
     }
+
+    if (isNoise&&!isSignal) {
+      noiseOMs_gen.push_back(idch);
+      fNoiseOMs++;
+    }
+    if (isSignal) {
+      signalOMs_gen.push_back(idch);
+      fSignalOMs++;
+    }
+    
+    if (isNoise&&!isSignal) hWhatIsOM->Fill(0.1,1);
+    if (isNoise&&isSignal) hWhatIsOM->Fill(1.1,1);
+    if (!isNoise&&isSignal) hWhatIsOM->Fill(2.1,1);
+    
     //for gen-reco amplitude comparison
-    if (fHitChan->GetPulseN()==1&&fHitChan->GetPulse(0)->GetMagic()!=1){
+    //    if (fHitChan->GetPulseN()==1&&fHitChan->GetPulse(0)->GetMagic()!=1){
+    if (signal!=0){
       singlePulse_ampls.push_back(fHitChan->GetPulse(0)->GetAmplitude());
-      singlePulse_ids.push_back(fHitChan->GetChannelID());
+      singlePulse_ids.push_back(idch);
     }
     //    std::cout<<"impulse "<<i<<"   iString: "<<iString<<"   idch "<<idch<<"   bb  "<<fHitChan->GetChannelID()<<std::endl;
     if (signal>fSignalCut_gen) {
       string_impulses_gen[iString].push_back(i);
       nHits++;
     }
+    
     if (signal>fSeedSignalCut_gen) hasLargeHit=true;
 
     if (signal>maxAmplitude_gen){
@@ -207,31 +264,25 @@ Bool_t BTimeClusters::Filter()
     }
   }
 
-  if (rho<50){
-    h_muon_energy->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
-    if (nHits>=5&&hasLargeHit) h_muon_energy_rcand->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
-  }
+  if (!hasLargeHit) return kFALSE;
   
-  if (nHits>=5&&hasLargeHit) h_rcand_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,1);
+  h_muon_energy->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
+  if (nHits>=5&&hasLargeHit) h_muon_energy_rcand_gen->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
+  
+  if (nHits>=5) h_rcand_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,1);
   h_smuons_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,1);
   
   //  std::cout<<"popo"<<std::endl;
-  h_hits_2pe->Fill(nHits,1);
-  if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) h_1mu_hits_2pe->Fill(nHits,1);
+  h_1mu_hits_2pe->Fill(nHits,1);
 
   int firedStrings=0;
   for (int iString=0; iString<8; iString++){
-    h_hits_per_string_2pe->Fill(string_impulses_gen[iString].size(),1);
-    if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) h_1mu_hits_per_string_2pe->Fill(string_impulses_gen[iString].size(),1);
+    h_1mu_hits_per_string_2pe->Fill(string_impulses_gen[iString].size(),1);
     if (string_impulses_gen[iString].size()>1) firedStrings++;
   }
-  h_fired_strings_2pe->Fill(firedStrings,1);
   
-  if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut){
-    // std::cout<<"NEXT EVENT     firedStrings: "<<firedStrings<<std::endl;
-    h_1mu_fired_strings_2pe->Fill(firedStrings,1);
-  }
-
+  h_1mu_fired_strings_2pe->Fill(firedStrings,1);
+  
   h_strings_polar_vs_rho->Fill(180-fMCEvent->GetPrimaryParticlePolar(),rho,firedStrings,1);
 
   //  std::cout<<"zoob"<<std::endl;
@@ -252,10 +303,13 @@ Bool_t BTimeClusters::Filter()
     if (fInputEventMask->GetFlag(iPulse)==0) continue;
     nPulses_initial++;
     int iChannel=fEvent->GetImpulse(iPulse)->GetChannelID();
+
+    hitMap_det->Fill(int(floor(iChannel/24)), iChannel%24,1);
+    
     string_impulses[int(floor(iChannel/24))].push_back(iPulse);
     
     for (int iGen=0; iGen<singlePulse_ids.size(); iGen++){
-      if (iChannel==singlePulse_ids[iGen]) h_hitSignal_reco_vs_gen->Fill(singlePulse_ids[iGen], fEvent->GetImpulse(iPulse)->GetAmplitude(),1); 
+      if (iChannel==singlePulse_ids[iGen]) h_hitSignal_reco_vs_gen->Fill(singlePulse_ampls[iGen], fEvent->GetImpulse(iPulse)->GetAmplitude(),1); 
     }
     if (fEvent->GetImpulse(iPulse)->GetAmplitude()>maxAmplitude_rec){
       maxAmplitude_rec=fEvent->GetImpulse(iPulse)->GetAmplitude();
@@ -268,8 +322,8 @@ Bool_t BTimeClusters::Filter()
   //else h_hitSignal_reco_vs_gen->Fill(-1,-1,1);
   
   // std::cout<<"bb"<<std::endl;
-  int hitStrings=0;
   std::vector<int> stringClusters[8];
+  int hitStrings=0;
   for (int iString=0; iString<8; iString++){
     if (string_impulses[iString].size()>0) hitStrings++;
     stringClusters[iString]=BuildStringCluster(iString, string_impulses[iString]);
@@ -283,14 +337,16 @@ Bool_t BTimeClusters::Filter()
   std::vector<int> globalCluster;
   for (int iString=0; iString<8; iString++){
     if (stringClusters[iString].size()>0) usedStrings++;
-    if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) hreco_hits_per_string->Fill(stringClusters[iString].size(),1);
+    hreco_hits_per_string->Fill(stringClusters[iString].size(),1);
     for (int iPulse=0; iPulse<stringClusters[iString].size(); iPulse++){
       globalCluster.push_back(stringClusters[iString][iPulse]);
     }
     h_hitsPerString_reco_vs_gen->Fill(string_impulses_gen[iString].size(),stringClusters[iString].size(),1);
   }
 
-  if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) hreco_fired_strings->Fill(usedStrings,1);
+  if (usedStrings>=2&&globalCluster.size()>=5) h_muon_energy_rcand->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
+  
+  hreco_fired_strings->Fill(usedStrings,1);
 
   //set the event mask
   for (int iPulse=0; iPulse<impulse_n; iPulse++){
@@ -301,12 +357,10 @@ Bool_t BTimeClusters::Filter()
     fOutputEventMask->SetFlag(globalCluster[iClustered],1);
   }
 
-  if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut) {
-    h_strings_reco_vs_gen->Fill(firedStrings, usedStrings,1);
-    h_strings_bevt_vs_gen->Fill(firedStrings, hitStrings,1);
-    hreco_hits->Fill(globalCluster.size(),1);
+  h_strings_reco_vs_gen->Fill(firedStrings, usedStrings,1);
+  h_strings_bevt_vs_gen->Fill(firedStrings, hitStrings,1);
+  hreco_hits->Fill(globalCluster.size(),1);
     //std::cout<<"OLD METH STRINGS: "<<usedStrings<<std::endl;
-  }
   //  std::cout<<"initial pulses: "<<nPulses_initial<<"   after clusterisation: "<<globalCluster.size()<<" used strings:   "<<usedStrings<<"     mc response muons:   "<<fMCEvent->GetResponseMuonsN()<<std::endl;
   
   return kTRUE;
@@ -342,6 +396,7 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
     if (fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude()<fSignalCut_hotspot||isClustered[iPulse]) continue;
     std::vector<int> hotspot;
     hotspot.push_back(iPulse);
+    isClustered[iPulse]=true;
     int chID=fEvent->GetImpulse(string_impulses[iPulse])->GetChannelID();
     float timePulse=fEvent->GetImpulse(string_impulses[iPulse])->GetTime();
     for (int iCand=iPulse+1; iCand<string_impulses.size(); iCand++){
@@ -386,9 +441,9 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
     }
     
     //std::cout<<max_id<<"  "<<submax_id<<std::endl;
-    //they should be on adjacent channels
-    if (fabs(fEvent->GetImpulse(string_impulses[max_id])->GetChannelID()-
-	     fEvent->GetImpulse(string_impulses[submax_id])->GetChannelID())!=1) continue;
+    //they should be on adjacent channels (??????)
+    //    if (fabs(fEvent->GetImpulse(string_impulses[max_id])->GetChannelID()-
+    //	     fEvent->GetImpulse(string_impulses[submax_id])->GetChannelID())!=1) continue;
     //if ok, add further hits to the hotspot
     std::vector<int> stringCluster=AddClusterImpulses(max_id, submax_id, string_impulses, fTimeMargin);
     //std::cout<<"check"<<std::endl;
@@ -572,28 +627,44 @@ Int_t BTimeClusters::PostProcess()
     }      
   }
 
-  for (int i=0; i<11; i++){
+  for (int i=0; i<22; i++){
     double normFactor=h_hitSignal_reco_vs_gen->ProjectionX()->GetBinContent(i+1);
     if (normFactor==0) continue;
-    for (int j=0; j<11; j++){
+    for (int j=0; j<22; j++){
       double bico=(double)h_hitSignal_reco_vs_gen->GetBinContent(i+1,j+1)/normFactor;
       //      std::cout<<i<<"   "<<j<<"   "<<"   "<<(double)normFactor<<"   "<<"   "<<(double)bico<<"   "<<(double)pow((double)normFactor,-1)<<std::endl;
       h_hitSignal_reco_vs_gen->SetBinContent(i+1, j+1, (double)bico);
     }      
   }
 
+  h_noiseFrac_clustered->Add(h_clusteredFrac_noise,1);
+  h_noiseFrac_clustered->Scale(pow(fNoiseOMs,-1));
+
+  h_signalFrac_clustered->Add(h_clusteredFrac_signal,1);
+  h_signalFrac_clustered->Scale(pow(fSignalOMs,-1));
+
+  h_clusteredFrac_noise->Divide(h_clusteredFrac_noise,h_clustered,1,1);
+  h_clusteredFrac_signal->Divide(h_clusteredFrac_signal,h_clustered,1,1);
 
   
+  h_effpur_mult->Add(h_clusteredFrac_signal,1);
+  h_effpur_mult->Multiply(h_signalFrac_clustered);
+    
   h_rcand_polar_vs_rho->Divide(h_rcand_polar_vs_rho,h_smuons_polar_vs_rho,1,1);
 
   h_muon_energy->TH1F::Sumw2();
   h_muon_energy_rcand->TH1F::Sumw2();
   h_muon_energy_rcand->Divide(h_muon_energy_rcand, h_muon_energy,1,1,"B");
+
+  h_muon_energy_rcand_gen->TH1F::Sumw2();
+  h_muon_energy_rcand_gen->Divide(h_muon_energy_rcand_gen, h_muon_energy,1,1,"B");
   
   fOUT->cd();
-  h_hits_per_string_2pe->Write();
-  h_hits_2pe->Write();
-  h_fired_strings_2pe->Write();
+  h_clusteredFrac_noise->Write();
+  h_clusteredFrac_signal->Write();
+  h_noiseFrac_clustered->Write();
+  h_signalFrac_clustered->Write();
+  h_effpur_mult->Write();
   h_1mu_hits_per_string_2pe->Write();
   h_1mu_hits_2pe->Write();
   h_1mu_fired_strings_2pe->Write();
@@ -608,7 +679,11 @@ Int_t BTimeClusters::PostProcess()
   h_hitsPerString_reco_vs_gen->Write();
   h_muon_energy->Write();
   h_muon_energy_rcand->Write();
+  h_muon_energy_rcand_gen->Write();
   h_hitSignal_reco_vs_gen->Write();
+  hWhatIsOM->Write();
+  hitMap_gen->Write();
+  hitMap_det->Write();
   fOUT->Close();
   return kTRUE;
 }
@@ -630,4 +705,33 @@ float BTimeClusters::getTrackDistanceToOM(TVector3 initialPoint, TVector3 direct
   float dist=diff.Mag()*sqrt(1-cosAlpha*cosAlpha);
 
   return dist;
+}
+
+int BTimeClusters::runWPscan(std::vector<int>* string_impulses, std::vector<int> noiseOMs_gen, std::vector<int> signalOMs_gen)
+{
+  std::vector<int> stringClusters[8];
+  int hitStrings=0;
+  for (int i=0; i<20; i++){
+    fSignalCut_hotspot=0.5+0.5*i;
+    for (int j=0; j<20; j++){
+      fTimeMargin=20*j;
+      std::vector<int> clusteredOMs;
+      for (int iString=0; iString<8; iString++){
+	if (string_impulses[iString].size()>0) hitStrings++;
+	stringClusters[iString]=BuildStringCluster(iString, string_impulses[iString]);
+	
+	for (int k=0; k<stringClusters[iString].size(); k++){
+	  int omID=fEvent->GetImpulse(stringClusters[iString][k])->GetChannelID();
+	  clusteredOMs.push_back(omID);
+	}
+      }
+      for (int iOM=0; iOM<clusteredOMs.size(); iOM++){
+	h_clustered->Fill(fSignalCut_hotspot, fTimeMargin,1);
+	for (int iNoise=0; iNoise<noiseOMs_gen.size(); iNoise++) if (clusteredOMs[iOM]==noiseOMs_gen[iNoise]) h_clusteredFrac_noise->Fill(fSignalCut_hotspot, fTimeMargin,1);
+	for (int iSignal=0; iSignal<signalOMs_gen.size(); iSignal++) if (clusteredOMs[iOM]==signalOMs_gen[iSignal]) h_clusteredFrac_signal->Fill(fSignalCut_hotspot, fTimeMargin,1);
+      }
+    }
+  }
+
+  return 1;
 }

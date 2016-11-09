@@ -50,6 +50,8 @@ class BTimeClusters : public BFilter
   std::vector<int> AddClusterImpulses(int max_ampl_id, int adjacent_id, std::vector<int> string_impulses, float window);
 
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM);
+
+  int runWPscan(std::vector<int>* string_impulses, std::vector<int> noiseOMs_gen, std::vector<int> signalOMs_gen);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
@@ -62,6 +64,12 @@ class BTimeClusters : public BFilter
   float fSignalCut_hotspot;
   float fGen_rhoCut;
   float fTimeMargin;
+  float fGen_minAngle;
+  float fGen_maxAngle;
+
+  int fEventCounter;
+  int fNoiseOMs;
+  int fSignalOMs;
   
   TFile* fOUT;
   TH1F* h_hits_per_string_2pe;
@@ -88,9 +96,25 @@ class BTimeClusters : public BFilter
   TProfile2D* h_strings_polar_vs_rho;
   
   TH1F* h_muon_energy;
+  TH1F* h_muon_energy_rcand_gen;
   TH1F* h_muon_energy_rcand;
 
   TH2F* h_hitSignal_reco_vs_gen;
+
+  TH2F* h_noiseFrac_clustered;
+  TH2F* h_signalFrac_clustered;
+
+  TH2F* h_clusteredFrac_noise;
+  TH2F* h_clusteredFrac_signal;
+
+  TH2F* h_effpur_mult;
+  
+  TH2F* h_clustered;
+
+  TH1F* hWhatIsOM;
+
+  TH2F* hitMap_gen;
+  TH2F* hitMap_det;
   
   //TH2F* h_spots_per_string;
   
