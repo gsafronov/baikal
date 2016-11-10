@@ -47,11 +47,13 @@ class BTimeClusters : public BFilter
   TString     fInputMaskName;
   
   std::vector<int> BuildStringCluster(int iString, std::vector<int> string_impulses);
-  std::vector<int> AddClusterImpulses(int max_ampl_id, int adjacent_id, std::vector<int> string_impulses, float window);
+  std::vector<int> AddClusterImpulses(std::vector<int> hotspot, std::vector<int> string_impulses, float window);
 
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM);
 
-  int runWPscan(std::vector<int>* string_impulses, std::vector<int> noiseOMs_gen, std::vector<int> signalOMs_gen);
+  int runWPscan(std::vector<int>* string_impulses, std::vector<bool> noiseOMs_gen, std::vector<bool> signalOMs_gen, std::vector<bool> signalStrings_gen);
+  
+  int sgn(float x);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
@@ -70,6 +72,7 @@ class BTimeClusters : public BFilter
   int fEventCounter;
   int fNoiseOMs;
   int fSignalOMs;
+  int fSignalStrings;
   
   TFile* fOUT;
   TH1F* h_hits_per_string_2pe;
@@ -103,7 +106,8 @@ class BTimeClusters : public BFilter
 
   TH2F* h_noiseFrac_clustered;
   TH2F* h_signalFrac_clustered;
-
+  TH2F* h_stringSignalFrac_clustered;
+  
   TH2F* h_clusteredFrac_noise;
   TH2F* h_clusteredFrac_signal;
 
