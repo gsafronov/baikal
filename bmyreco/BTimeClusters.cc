@@ -50,7 +50,7 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   fGen_minAngle=45;
   fGen_maxAngle=90;
 
-  fSignalCut_gen=0.3;
+  fSignalCut_gen=1.0;
   fSeedSignalCut_gen=4;
 
   fVerbose=false;
@@ -278,7 +278,7 @@ Bool_t BTimeClusters::Filter()
     }
   }
 
-  //  if (!hasLargeHit) return kFALSE;
+  if (!hasLargeHit) return kFALSE;
   
   h_muon_energy->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
   if (nHits>=5&&hasLargeHit) h_muon_energy_rcand_gen->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
@@ -349,7 +349,7 @@ Bool_t BTimeClusters::Filter()
   for (int iString=0; iString<8; iString++){
     if (string_impulses[iString].size()>0) hitStrings++;
     if (fVerbose){
-      if (string_impulses_gen[iString].size()>3){
+      if (string_impulses_gen[iString].size()>0&&firedStrings>=0){
 	std::cout<<"gen string:  "<<iString<<":   "<<string_impulses_gen[iString].size()<<" hits"<<std::endl;
 	for (int ip=0; ip<string_impulses_gen[iString].size(); ip++){
 	  int  idch=fMCEvent->GetHitChannel(string_impulses_gen[iString][ip])->GetChannelID()-1;
@@ -377,7 +377,7 @@ Bool_t BTimeClusters::Filter()
     }
     h_hitsPerString_reco_vs_gen->Fill(string_impulses_gen[iString].size(),stringClusters[iString].size(),1);
   }
-
+  if (fVerbose) std::cout<<"firedStrings: "<<firedStrings<<"     recoStrings: "<<usedStrings<<std::endl;
   if (usedStrings>=2&&globalCluster.size()>=5) h_muon_energy_rcand->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
   
   hreco_fired_strings->Fill(usedStrings,1);
