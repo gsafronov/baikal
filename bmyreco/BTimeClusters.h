@@ -54,6 +54,9 @@ class BTimeClusters : public BFilter
   int runWPscan(std::vector<int>* string_impulses, std::vector<bool> noiseOMs_gen, std::vector<bool> signalOMs_gen, std::vector<bool> signalStrings_gen);
   
   int sgn(float x);
+
+  int findTriggerString(float high_threshold, float low_threshold);
+  
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
