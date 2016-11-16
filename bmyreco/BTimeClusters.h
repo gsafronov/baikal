@@ -46,8 +46,8 @@ class BTimeClusters : public BFilter
 
   TString     fInputMaskName;
   
-  std::vector<int> BuildStringCluster(int iString, std::vector<int> string_impulses);
-  std::vector<int> AddClusterImpulses(std::vector<int> hotspot, std::vector<int> string_impulses, float window);
+  std::vector<int> buildStringCluster(int iString, std::vector<int> string_impulses);
+  std::vector<int> addImpulses(std::vector<int> hotspot, std::vector<int> string_impulses);
 
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM);
 
@@ -57,6 +57,13 @@ class BTimeClusters : public BFilter
 
   int findTriggerString(float high_threshold, float low_threshold);
   
+  int countMCStringGaps(std::vector<int> string_impulses_gen);
+  
+  std::vector<std::vector<int>> findHotSpots(std::vector<int> string_impulses);
+
+  std::pair<float,float> getPolarEstimate_string(std::vector<int> stringCluster);
+
+  std::pair<float,float> getClusterCenter(std::vector<int> stringCluster);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
@@ -66,9 +73,10 @@ class BTimeClusters : public BFilter
 
   float fSignalCut_gen;
   float fSeedSignalCut_gen;
-  float fSignalCut_hotspot;
+  float fSignalCut_hotspot1;
+  float fSignalCut_hotspot2;
   float fGen_rhoCut;
-  float fTimeMargin;
+  float fSafetyWindow;
   float fGen_minAngle;
   float fGen_maxAngle;
 

@@ -42,16 +42,17 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   cWater=cVacuum/1.33;
 
   //define WP
-  fSignalCut_hotspot=1.5;
-  fTimeMargin=20;
+  fSignalCut_hotspot1=1.5;
+  fSignalCut_hotspot2=-10;
+  fSafetyWindow=20;
 
   //gen-level cuts
   fGen_rhoCut=40;
-  fGen_minAngle=45;
+  fGen_minAngle=10;
   fGen_maxAngle=90;
 
-  fSignalCut_gen=0.5;
-  fSeedSignalCut_gen=3;
+  fSignalCut_gen=0.2;
+  fSeedSignalCut_gen=1.5;
 
   fVerbose=false;
   
@@ -87,16 +88,16 @@ BTimeClusters::BTimeClusters(const char *name, const char *title)
   
   h_hitSignal_reco_vs_gen=new TH2F("h_hitSignal_reco_vs_gen","h_hitSignal_reco_vs_gen",22,-1,10,22,-1,10);
 
-  h_noiseFrac_clustered=new TH2F("h_noiseFrac_clustered","h_noiseFrac_clustered",20,0.5,10.5,20,0,400);
-  h_signalFrac_clustered=new TH2F("h_signalFrac_clustered","h_signalFrac_clustered",20,0.5,10.5,20,0,400);
-  h_stringSignalFrac_clustered=new TH2F("h_stringSignalFrac_clustered","h_stringSignalFrac_clustered",20,0.5,10.5,20,0,400);
+  h_noiseFrac_clustered=new TH2F("h_noiseFrac_clustered","h_noiseFrac_clustered",20,0.5,10.5,20,0,200);
+  h_signalFrac_clustered=new TH2F("h_signalFrac_clustered","h_signalFrac_clustered",20,0.5,10.5,20,0,200);
+  h_stringSignalFrac_clustered=new TH2F("h_stringSignalFrac_clustered","h_stringSignalFrac_clustered",20,0.5,10.5,20,0,200);
   
-  h_clusteredFrac_noise=new TH2F("h_clusteredFrac_noise","h_clusteredFrac_noise",20,0.5,10.5,20,0,400);
-  h_clusteredFrac_signal=new TH2F("h_clusteredFrac_signal","h_clusteredFrac_signal",20,0.5,10.5,20,0,400);
+  h_clusteredFrac_noise=new TH2F("h_clusteredFrac_noise","h_clusteredFrac_noise",20,0.5,10.5,20,0,200);
+  h_clusteredFrac_signal=new TH2F("h_clusteredFrac_signal","h_clusteredFrac_signal",20,0.5,10.5,20,0,200);
 
-  h_effpur_mult=new TH2F("h_effpur_mult","h_effpur_mult",20,0.5,10.5,20,0,400);
+  h_effpur_mult=new TH2F("h_effpur_mult","h_effpur_mult",20,0.5,10.5,20,0,200);
   
-  h_clustered=new TH2F("h_clustered","h_clustered",20,0.5,10.5,20,0,400);
+  h_clustered=new TH2F("h_clustered","h_clustered",20,0.5,10.5,20,0,200);
     
   hWhatIsOM=new TH1F("hWhatIsOM","hWhatIsOM",3,0,3);
 
@@ -135,6 +136,13 @@ Int_t BTimeClusters::PreProcess(MParList * pList)
   
   fGeomTel = (BGeomTel*)pList->FindObject(AddSerialNumber("BGeomTel"));
 
+  /*
+  std::cout<<"geometry in filter:    "<<std::endl;
+  for (int i=0; i<192; i++){
+    float z=fGeomTel->At(i)->GetZ();
+    std::cout<<"chan :"<<i<<"     Z: "<<z<<std::endl;
+  }
+  */
   /*
   std::cout<<"BChanSetter: exclude calibrated channel from reconstruction"<<std::endl;
   for (int i=0; i<chanIDs.size(); i++){
@@ -203,8 +211,11 @@ Bool_t BTimeClusters::Filter()
 
   //find trigger string and exclude it from analysis
   int trigger_string=findTriggerString(4,1.5);
+  //int trigger_string=1;
   
   std::vector<int> string_impulses_gen[8];
+  std::vector<int> hasGaps;
+  for (int i=0; i<8; i++) hasGaps.push_back(false);
   
   int noisePulseID=-100;
   int nHits=0;
@@ -245,8 +256,8 @@ Bool_t BTimeClusters::Filter()
     bool isNoise=false;
     bool isSignal=false;
     for (int k=0; k<fHitChan->GetPulseN(); k++){
-      if (fHitChan->GetPulse(k)->GetMagic()!=1) {
-	if (k==0) signal+=fHitChan->GetPulse(k)->GetAmplitude();
+      if (fHitChan->GetPulse(k)->GetMagic()!=1&&k==0) {
+	signal+=fHitChan->GetPulse(k)->GetAmplitude();
 	isSignal=true;
       }
       if (fHitChan->GetPulse(k)->GetMagic()==1) isNoise=true;
@@ -258,7 +269,7 @@ Bool_t BTimeClusters::Filter()
     }
     if (isSignal) {
       signalOMs_gen[idch]=true;
-      fSignalOMs++;
+      //fSignalOMs++;
     }
     
     if (isNoise&&!isSignal) hWhatIsOM->Fill(0.1,1);
@@ -272,12 +283,10 @@ Bool_t BTimeClusters::Filter()
       singlePulse_ids.push_back(idch);
     }
     //    std::cout<<"impulse "<<i<<"   iString: "<<iString<<"   idch "<<idch<<"   bb  "<<fHitChan->GetChannelID()<<std::endl;
-    if (signal>fSignalCut_gen) {
-      string_impulses_gen[iString].push_back(i);
-      nHits++;
-    }
+    if (signal>=fSignalCut_gen) string_impulses_gen[iString].push_back(i);
     
-    if (signal>fSeedSignalCut_gen) {
+    
+    if (signal>=fSeedSignalCut_gen) {
       hasLargeHit=true;
       stringHasLargeHit[iString]=true;
     }
@@ -288,6 +297,17 @@ Bool_t BTimeClusters::Filter()
     }
   }
 
+  for (int iString=0; iString<8; iString++) {
+    int nGaps=countMCStringGaps(string_impulses_gen[iString]);
+    if (nGaps>0) {
+      hasGaps[iString]=true;
+      string_impulses_gen[iString].clear();
+    }
+    if (!hasGaps[iString]) nHits+=string_impulses_gen[iString].size();
+    if (!hasGaps[iString]&&stringHasLargeHit[iString]&&string_impulses_gen[iString].size()>=3) fSignalOMs+=string_impulses_gen[iString].size();
+  }
+
+ 
   //  if (!hasLargeHit) return kFALSE;
   
   h_muon_energy->Fill(fMCEvent->GetTrack(0)->GetMuonEnergy(),1);
@@ -302,9 +322,8 @@ Bool_t BTimeClusters::Filter()
   
   int firedStrings=0;
   for (int iString=0; iString<8; iString++){
+    if (hasGaps[iString]) continue;
     h_1mu_hits_per_string_2pe->Fill(string_impulses_gen[iString].size(),1);
-    //check if the string was fired, mimicking clustering condition 
-
     if (string_impulses_gen[iString].size()>1&&stringHasLargeHit[iString]) {
       fSignalStrings++;
       firedStrings++;
@@ -365,6 +384,11 @@ Bool_t BTimeClusters::Filter()
   int hitStrings=0;
   if (fVerbose) std::cout<<">>>>>>>>>>>>>>>>>>>>>>>>>NEXT EVENT"<<std::endl;
   for (int iString=0; iString<8; iString++){
+    
+    //do not do anything is there is a gap in MC signal
+    if (hasGaps[iString]||iString==trigger_string) continue;
+    /////////
+    
     if (string_impulses[iString].size()>0) hitStrings++;
     if (fVerbose){
       if (string_impulses_gen[iString].size()>0&&firedStrings>=0){
@@ -375,10 +399,10 @@ Bool_t BTimeClusters::Filter()
 	  idch=idch-1;
 	  std::cout<<"    impulse idch: "<<idch<<std::endl;
 	}
-	stringClusters[iString]=BuildStringCluster(iString, string_impulses[iString]);
+	stringClusters[iString]=buildStringCluster(iString, string_impulses[iString]);
       }
     }
-    else stringClusters[iString]=BuildStringCluster(iString, string_impulses[iString]);
+    else stringClusters[iString]=buildStringCluster(iString, string_impulses[iString]);
   }
 
   //  std::cout<<"cc"<<std::endl;
@@ -388,6 +412,7 @@ Bool_t BTimeClusters::Filter()
   
   std::vector<int> globalCluster;
   for (int iString=0; iString<8; iString++){
+    if (hasGaps[iString]) continue;
     if (stringClusters[iString].size()>0) usedStrings++;
     hreco_hits_per_string->Fill(stringClusters[iString].size(),1);
     for (int iPulse=0; iPulse<stringClusters[iString].size(); iPulse++){
@@ -415,12 +440,51 @@ Bool_t BTimeClusters::Filter()
     //std::cout<<"OLD METH STRINGS: "<<usedStrings<<std::endl;
   //  std::cout<<"initial pulses: "<<nPulses_initial<<"   after clusterisation: "<<globalCluster.size()<<" used strings:   "<<usedStrings<<"     mc response muons:   "<<fMCEvent->GetResponseMuonsN()<<std::endl;
 
-  // runWPscan(string_impulses, noiseOMs_gen, signalOMs_gen, signalStrings_gen);
+  runWPscan(string_impulses, noiseOMs_gen, signalOMs_gen, signalStrings_gen);
   
+  //TRY TO LINK CLUSTERS ON DIFFERENT STRINGS:
+  //FIND LARGEST AMPLITUDE CLUSTER
+  float maxAmpl=0;
+  int stringID=-1;
+  for (int iString=0; iString<8; iString++){
+    float sum=0;
+    for (int j=0; j<stringClusters[iString].size(); j++){
+      sum+=fEvent->GetImpulse(stringClusters[iString][j])->GetAmplitude();
+    }
+    if (sum>maxAmpl){
+      maxAmpl=sum;
+      stringID=iString;
+    }
+  }
+
+  if (stringID!=-1) {
+    //  for (int iString=0; iString<8; iString++){
+    //  if (stringClusters[iString].size()==0) continue;
+    std::pair<float,float> center=getClusterCenter(stringClusters[stringID]);
+    if (usedStrings>1&&firedStrings>1&&stringID!=-1){
+      std::cout<<"string: "<<stringID<<"     center z, t:   "<<center.first<<", "<<center.second<<std::endl;
+      for (int k=0; k<stringClusters[stringID].size(); k++){
+	std::cout<<"         hit: "<<k<<"   z, t: "<<
+	  fGeomTel->At(fEvent->GetImpulse(stringClusters[stringID][k])->GetChannelID())->GetZ()<<", "<<
+	  fEvent->GetImpulse(stringClusters[stringID][k])->GetTime()<<
+	  std::endl;
+      }
+    }
+    //check other strings
+    //link if deltaZ*deltaT<0
+    //
+    for (int iStringLink=0; iStringLink<8; iStringLink++){
+      std::pair<float,float> centerLink=getClusterCenter(stringClusters[iStringLink]);
+      if ((centerLink.first-center.first)*(center.second-centerLink.second)>0) continue;
+      //ADD TO GLOBAL CLUSTER...
+    }
+  }
+    //}
+
   return kTRUE;
 }
 
-std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int> string_impulses)
+std::vector<int> BTimeClusters::buildStringCluster(int iString, std::vector<int> string_impulses)
 {
   // std::cout<<"BUILD"<<std::endl;
   std::vector<int> stringCluster;
@@ -440,36 +504,7 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
   TVector3 zero(0,0,0);
   float rho=getTrackDistanceToOM(inPoTrack, genVec, zero);
   
-  
-  ///////////////?TEST: PRODUCE ALL POSSIBLE CASUAL CONNECTED PAIRS OF IMPULSES AT NEIGHBOURING MODULES 
-  
-  std::vector<std::vector<int>> hot_spots;
-  std::vector<bool> isClustered;
-  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++) isClustered.push_back(false);  
-  
-  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++){
-    if (fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude()<fSignalCut_hotspot||isClustered[iPulse]) continue;
-    std::vector<int> hotspot;
-    int chID=fEvent->GetImpulse(string_impulses[iPulse])->GetChannelID();
-    float timePulse=fEvent->GetImpulse(string_impulses[iPulse])->GetTime();
-    for (int iCand=0; iCand<string_impulses.size(); iCand++){
-      //if (fEvent->GetImpulse(string_impulses[iCand])->GetAmplitude()<fSignalCut_hotspot||
-      if (isClustered[iCand]||isClustered[iPulse]) continue;
-      int diff=abs(chID-fEvent->GetImpulse(string_impulses[iCand])->GetChannelID());
-      if (diff==1){
-	float timeCand=fEvent->GetImpulse(string_impulses[iCand])->GetTime();
-	//      std::cout<<timeCand<<"      "<<timePulse<<"       "<<fabs(timePulse-timeCand)<<std::endl;
-	if (fabs(timeCand-timePulse)<(diff*15/cWater)+30){
-	  isClustered[iCand]=true;
-	  isClustered[iPulse]=true;
-	  hotspot.push_back(iCand);
-	  hotspot.push_back(iPulse);
-	}
-      }
-    }
-    if (hotspot.size()>1) hot_spots.push_back(hotspot);
-  }
-
+   std::vector<std::vector<int>> hot_spots=findHotSpots(string_impulses);
   
   //  if (fMCEvent->GetResponseMuonsN()==1&&rho<fGen_rhoCut){
   //    std::cout<<"string #"<<iString+1<<"   spots found: "<<hot_spots.size()<<std::endl;
@@ -477,8 +512,7 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
   //      std::cout<<"       spot #"<<i<<"  size "<<hot_spots[i].size()<<std::endl;
   //    }
   // }
-  
-  
+    
   std::vector<int> max_size_cluster;
   int max_cluster_size=0;
 
@@ -486,28 +520,8 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
   
   for (int i=0; i<hot_spots.size(); i++){
     
-    //find max and next to max hits from the hotspot [WHAT FOR??]
-    /*
-    int max_id=-1;
-    int submax_id=-1;
-    for (int j=0; j<hot_spots[i].size(); j++){
-      int nLargerAmpl=0;
-      for (int k=0; k<hot_spots[i].size(); k++){
-	if(k==j) continue;     
-	if (fEvent->GetImpulse(string_impulses[hot_spots[i][j]])->GetAmplitude()<
-	    fEvent->GetImpulse(string_impulses[hot_spots[i][k]])->GetAmplitude()) nLargerAmpl++;
-      }
-      if (nLargerAmpl==0) max_id=hot_spots[i][j];
-      if (nLargerAmpl==1) submax_id=hot_spots[i][j];
-    }
-    */
-    //std::cout<<max_id<<"  "<<submax_id<<std::endl;
-    //they should be on adjacent channels (??????)
-    //    if (fabs(fEvent->GetImpulse(string_impulses[max_id])->GetChannelID()-
-    //	     fEvent->GetImpulse(string_impulses[submax_id])->GetChannelID())!=1) continue;
-    //if ok, add further hits to the hotspot
-    std::vector<int> stringCluster=AddClusterImpulses(hot_spots[i], string_impulses, fTimeMargin);
-    //std::cout<<"check"<<std::endl;
+    std::vector<int> stringCluster=addImpulses(hot_spots[i], string_impulses);
+    
     //check if the cluster is the biggest in the event
     if (stringCluster.size()>max_cluster_size){
       max_cluster_size=stringCluster.size();
@@ -515,53 +529,11 @@ std::vector<int> BTimeClusters::BuildStringCluster(int iString, std::vector<int>
     }
   }
   
-  /*    
-  ////////////
-  //find seed channel - the one with maximum signal
-  
-  float max_ampl=-1;
-  int max_ampl_id=-1;
-  
-  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++){
-    if (max_ampl<fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude()){
-      max_ampl=fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude();
-      max_ampl_id=iPulse;
-    }
-  }
-
-  if (string_impulses.size()==0) return stringCluster;
-  
-  // std::cout<<"bbbbb1:  "<<string_impulses.size()<<"  "<<max_ampl<<"  "<<max_ampl_id<<std::endl;
-  
-  //check signal in seed neighbours
-  float adjacent_ampl=0;
-  int adjacent_id=-1;
-  int seed_channel_id=fEvent->GetImpulse(string_impulses[max_ampl_id])->GetChannelID();
-  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++){
-    int channel_id=fEvent->GetImpulse(string_impulses[iPulse])->GetChannelID();
-    if (!(channel_id==seed_channel_id+1||channel_id==seed_channel_id-1)) continue;
-    if (adjacent_ampl<fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude()){
-      adjacent_ampl=fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude();
-      adjacent_id=iPulse;
-    }
-  }
-
-  //fail if no adjacent channel with ampl > 2 pe. But need to check other seeds then. Possibly build pairs of adjacent channels with A > 2pe and treat the one with higher signal as seed.
-  
-  //  std::cout<<"bbbbb2"<<std::endl;
-
-  if (adjacent_ampl<fSignalCut_hotspot) return stringCluster;
-
-  //hot spot is found, run cluster buiding procedure
-  float window = fTimeMargin;
-  stringCluster=AddClusterImpulses(max_ampl_id, adjacent_id, string_impulses, window);
-  */
-  //  std::cout<<"bloblo"<<std::endl;
   return max_size_cluster;
-  //return stringCluster;
+  
 }
 
-std::vector<int> BTimeClusters::AddClusterImpulses(std::vector<int> hotspot, std::vector<int> string_impulses, float window)
+std::vector<int> BTimeClusters::addImpulses(std::vector<int> hotspot, std::vector<int> string_impulses)
 //						   int max_ampl_id, int adjacent_id, std::vector<int> string_impulses, float window)
 {
   std::vector<int> stringCluster;
@@ -589,22 +561,22 @@ std::vector<int> BTimeClusters::AddClusterImpulses(std::vector<int> hotspot, std
   //  std::cout<<"bbbbb3"<<std::endl;
 
   for (int iSeed=0; iSeed<hotspot.size(); iSeed++){
-    
+
     float seed_time=fEvent->GetImpulse(string_impulses[hotspot[iSeed]])->GetTime();
     int seed_channel_id=fEvent->GetImpulse(string_impulses[hotspot[iSeed]])->GetChannelID();
     int seed_storey=(seed_channel_id)%24;
     float adjacent_time=fEvent->GetImpulse(string_impulses[hotspot[1-iSeed]])->GetTime();
     int adjacent_channel_id=fEvent->GetImpulse(string_impulses[hotspot[1-iSeed]])->GetChannelID();
     
-    float deltaZ=fGeomTel->At(seed_channel_id)->GetZ()-fGeomTel->At(adjacent_channel_id)->GetZ();
+    float deltaZ=fabs(fGeomTel->At(seed_channel_id)->GetZ()-fGeomTel->At(adjacent_channel_id)->GetZ());
     float deltaT=seed_time-adjacent_time;
     int id_increment=seed_channel_id-adjacent_channel_id;
 
     //  std::cout<<"bbbbb4"<<std::endl;
 
     //add +-1 channels
-    float time_early=seed_time/*sgn(deltaT)*fabs(deltaZ)/cWater*/-sgn(deltaT)*window;//, seed_time+deltaT-window); //experimental
-    float time_late=max(seed_time+sgn(deltaT)*fabs(deltaZ)/cWater+window, seed_time+sgn(deltaT)*window);
+    float time_early=seed_time+deltaT-fSafetyWindow; //experimental
+    float time_late=max(seed_time+deltaZ/cWater+fSafetyWindow, seed_time+deltaT+fSafetyWindow);
 
     if (fVerbose) std::cout<<" deltaT: "<<deltaT<<"   seed_time: "<<seed_time<<"    seed chan: "<<seed_channel_id<<"   t_early: "<<time_early<<"   t_late: "<<time_late<<std::endl;
     
@@ -616,24 +588,17 @@ std::vector<int> BTimeClusters::AddClusterImpulses(std::vector<int> hotspot, std
       if (chanID==seed_channel_id+id_increment){
 	if (chan_time>time_early&&chan_time<time_late){
 	  stringCluster.push_back(string_impulses[iPulse]);
-	  //fOutputEventMask->SetFlag(string_impulses[iPulse],10);
 	  storeys_pulse_id[chanID%24]=string_impulses[iPulse];
 	  storeys_pulse_time[chanID%24]=fEvent->GetImpulse(string_impulses[iPulse])->GetTime();
 	}
       }
     }
-    
+  
     if (fVerbose){
       if (stringCluster.size()==2) std::cout<<"fail"<<std::endl;
       if (stringCluster.size()==0) std::cout<<"super fail"<<std::endl;
       if (stringCluster.size()>2) std::cout<<"ok"<<std::endl;
     }
-    /*
-      if (stringCluster.size()==2) {
-      //std::cout<<"size 2"<<std::endl;
-      return stringCluster;
-      }
-    */
     
     //add up to 7 channels
     
@@ -661,7 +626,7 @@ std::vector<int> BTimeClusters::AddClusterImpulses(std::vector<int> hotspot, std
 	  int chanID=fEvent->GetImpulse(string_impulses[iPulse])->GetChannelID();
 	  if (chanID!=seed_channel_id+i+sgn(i)*j) continue;
 	  float time=fEvent->GetImpulse(string_impulses[iPulse])->GetTime();
-	  if (time<max_estimate+fTimeMargin&&time>min_estimate-fTimeMargin){
+	  if (time<max_estimate+fSafetyWindow&&time>min_estimate-fSafetyWindow){
 	    stringCluster.push_back(string_impulses[iPulse]);
 	    storeys_pulse_id[seed_storey+i+sgn(i)*j]=string_impulses[iPulse];
 	    storeys_pulse_time[seed_storey+i+sgn(i)*j]=string_impulses[iPulse];
@@ -706,10 +671,10 @@ Int_t BTimeClusters::PostProcess()
   }
 
   for (int i=0; i<25; i++){
-    double normFactor=h_1mu_hits_per_string_2pe->GetBinContent(i+1);
+    double normFactor=h_hitsPerString_reco_vs_gen->ProjectionX()->GetBinContent(i+1);
     if (normFactor==0) continue;
     for (int j=0; j<25; j++){
-      double bico=(double)h_hitsPerString_reco_vs_gen->GetBinContent(i+1,j+1)/h_1mu_hits_per_string_2pe->GetBinContent(i+1);
+      double bico=(double)h_hitsPerString_reco_vs_gen->GetBinContent(i+1,j+1)/normFactor;
       //      std::cout<<i<<"   "<<j<<"   "<<"   "<<(double)normFactor<<"   "<<"   "<<(double)bico<<"   "<<(double)pow((double)normFactor,-1)<<std::endl;
       h_hitsPerString_reco_vs_gen->SetBinContent(i+1, j+1, (double)bico);
     }      
@@ -801,37 +766,43 @@ int BTimeClusters::runWPscan(std::vector<int>* string_impulses, std::vector<bool
 {
   std::vector<int> stringClusters[8];
   int hitStrings=0;
+  float fSignalCut_hotspot1_buf=fSignalCut_hotspot1;
+  float fSafetyWindow_buf=fSafetyWindow;
   for (int i=0; i<20; i++){
-    fSignalCut_hotspot=0.5+0.5*i;
+    fSignalCut_hotspot1=0.5+0.5*i;
     for (int j=0; j<20; j++){
-      fTimeMargin=20*j;
+      fSafetyWindow=10*j;
       std::vector<int> clusteredOMs;
       int nSignalOMs[8]={0};
       for (int iString=0; iString<8; iString++){
-	  //find how many signal OMs
+	//if (!signalStrings_gen
+	//find how many signal OMs
 	//	nSignalOMs[iString]=0;
 	for (int i=0; i<signalOMs_gen.size(); i++){
-	  if (signalOMs_gen[i]&&int(floor(i/24))==iString) nSignalOMs[iString]++;
+	  if (signalOMs_gen[i]&&int(floor(i/24))==iString&&signalStrings_gen[iString]) nSignalOMs[iString]++;
 	}
 	
 	if (string_impulses[iString].size()>0) hitStrings++;
-	stringClusters[iString]=BuildStringCluster(iString, string_impulses[iString]);
+	stringClusters[iString]=buildStringCluster(iString, string_impulses[iString]);
 
-	if (stringClusters[iString].size()>0&&signalStrings_gen[iString]) h_stringSignalFrac_clustered->Fill(fSignalCut_hotspot, fTimeMargin,1);
+	if (stringClusters[iString].size()>0&&signalStrings_gen[iString]) h_stringSignalFrac_clustered->Fill(fSignalCut_hotspot1, fSafetyWindow,1);
 
-	for (int k=0; k<stringClusters[iString].size(); k++){
-	  int omID=fEvent->GetImpulse(stringClusters[iString][k])->GetChannelID();
-	  clusteredOMs.push_back(omID);
+	if (signalStrings_gen[iString]&&nSignalOMs[iString]>2){
+	  for (int k=0; k<stringClusters[iString].size(); k++){
+	    int omID=fEvent->GetImpulse(stringClusters[iString][k])->GetChannelID();
+	    clusteredOMs.push_back(omID);
+	  }
 	}
       }
       for (int iOM=0; iOM<clusteredOMs.size(); iOM++){
-	h_clustered->Fill(fSignalCut_hotspot, fTimeMargin,1);
-	if (noiseOMs_gen[clusteredOMs[iOM]]) h_clusteredFrac_noise->Fill(fSignalCut_hotspot, fTimeMargin,1);
-	if (signalOMs_gen[clusteredOMs[iOM]]) h_clusteredFrac_signal->Fill(fSignalCut_hotspot, fTimeMargin,1);
+	h_clustered->Fill(fSignalCut_hotspot1, fSafetyWindow,1);
+	if (noiseOMs_gen[clusteredOMs[iOM]]) h_clusteredFrac_noise->Fill(fSignalCut_hotspot1, fSafetyWindow,1);
+	if (signalOMs_gen[clusteredOMs[iOM]]) h_clusteredFrac_signal->Fill(fSignalCut_hotspot1, fSafetyWindow,1);
       }
     }
   }
-  
+  fSafetyWindow=fSafetyWindow_buf;
+  fSignalCut_hotspot1=fSignalCut_hotspot1_buf;
   return 1;
 }
 
@@ -868,21 +839,225 @@ int BTimeClusters::findTriggerString(float high_threshold, float low_threshold)
       }
     }
   }
+
   //find trigger impulse with max amplitude and pick corresponding string
   float ampl_max=0;
   int chIDmax=-1;
   for (int i=0; i<trigger_impulses.size(); i++){
-    if (fEvent->GetImpulse(i)->GetAmplitude()>ampl_max){
-      ampl_max=fEvent->GetImpulse(i)->GetAmplitude();
-      chIDmax=fEvent->GetImpulse(i)->GetChannelID();
+    if (fEvent->GetImpulse(trigger_impulses[i])->GetAmplitude()>ampl_max){
+      ampl_max=fEvent->GetImpulse(trigger_impulses[i])->GetAmplitude();
+      chIDmax=fEvent->GetImpulse(trigger_impulses[i])->GetChannelID();
     }
   }
-  triggerString=floor(chIDmax/24);
+
+  int triggerSection=-1;
   if (chIDmax==-1) triggerString=6;
-  //    fGeomTel->At(chIDmax)->GetStringNum();
-  int triggerSection=fGeomTel->At(chIDmax)->GetSecNum();
-  
-  // std::cout<<"trigger string: "<<triggerString<<"   trigger section: "<<triggerSection<<"    trigger channel: "<<chIDmax<<std::endl;
+  else {
+    triggerString=int(floor(chIDmax/24));
+    triggerSection=fGeomTel->At(chIDmax)->GetSecNum();
+  }
   
   return triggerString;
 }
+
+
+int BTimeClusters::countMCStringGaps(std::vector<int> string_impulses_gen)
+{
+  std::vector<bool> chanID;
+  for (int i=0; i<192; i++) chanID.push_back(false);
+  for (int i=0; i<string_impulses_gen.size(); i++){
+    int idch=fMCEvent->GetHitChannel(string_impulses_gen[i])->GetChannelID()-1;
+    idch=24*floor(idch/24)+(24-idch%24);
+    idch=idch-1;
+    chanID[idch]=true;
+  }
+
+  int nGaps=0;
+  int nOMinGap=0;
+  bool start=false;
+  for (int i=0; i<chanID.size(); i++){
+    if (chanID[i]) start=true;
+    if (start&&(!chanID[i])) {
+      nGaps++;
+      nOMinGap++;
+    }
+    if (start&&chanID[i]) nOMinGap=0;
+    if (start&&nOMinGap>=10) {
+      nGaps=nGaps-nOMinGap;
+      start=false;
+    }
+    if (start&&i==chanID.size()-1) {
+      nGaps=nGaps-nOMinGap;
+      start=false;
+    }
+  }
+  //  std::cout<<"nGaps:   "<<nGaps<<"     nOMinGap: "<<nOMinGap<<std::endl;
+  return nGaps;  
+}
+
+
+
+std::vector<std::vector<int>> BTimeClusters::findHotSpots(std::vector<int> string_impulses)
+{
+  //: PRODUCE ALL POSSIBLE CASUAL CONNECTED PAIRS OF IMPULSES AT NEIGHBOURING MODULES 
+  //: ORDER PAIRS IN SUM OF IMPULSE AMPLITUDE
+  
+  std::vector<std::vector<int> > hot_spots;
+  std::vector<bool> isClustered;
+  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++) isClustered.push_back(false);  
+  
+  for (int iPulse=0; iPulse<string_impulses.size(); iPulse++){
+    if (fEvent->GetImpulse(string_impulses[iPulse])->GetAmplitude()<fSignalCut_hotspot1) continue;
+    int chID=fEvent->GetImpulse(string_impulses[iPulse])->GetChannelID();
+    float timePulse=fEvent->GetImpulse(string_impulses[iPulse])->GetTime();
+    for (int iCand=0; iCand<string_impulses.size(); iCand++){
+      int id_increment=fEvent->GetImpulse(string_impulses[iCand])->GetChannelID()-chID;
+      if (abs(id_increment)==1&&
+	  fEvent->GetImpulse(string_impulses[iCand])->GetAmplitude()>fSignalCut_hotspot2){
+	float timeCand=fEvent->GetImpulse(string_impulses[iCand])->GetTime();
+	if (fabs(timeCand-timePulse)<(abs(id_increment)*15/cWater+fSafetyWindow)&&(!isClustered[iCand])){
+	  std::vector<int> hotspot;
+	  hotspot.push_back(iCand);
+	  hotspot.push_back(iPulse);
+	  hot_spots.push_back(hotspot);
+	  isClustered[iPulse]=true;
+	}
+      }
+    }
+  }
+  
+  //ORDER PAIRS IN SUM IMPULSE
+  std::vector<std::vector<int>> result;
+  for (int i=0; i<hot_spots.size(); i++){
+    std::vector<int> dummy;
+    result.push_back(dummy);
+  }
+  
+  for (int iHotspot=0; iHotspot<hot_spots.size(); iHotspot++){
+    float sumAmpl=fEvent->GetImpulse(string_impulses[hot_spots[iHotspot][0]])->GetAmplitude()+
+      fEvent->GetImpulse(string_impulses[hot_spots[iHotspot][1]])->GetAmplitude();
+    int nLarger=0;
+    for (int i=0; i<hot_spots.size(); i++){
+      float probeSumAmpl=fEvent->GetImpulse(string_impulses[hot_spots[i][0]])->GetAmplitude()+
+      fEvent->GetImpulse(string_impulses[hot_spots[i][1]])->GetAmplitude();
+      if (sumAmpl<probeSumAmpl) nLarger++;
+    }
+    result[nLarger]=hot_spots[iHotspot];
+  }
+
+  return result;
+ 
+  // return hot_spots;
+}
+
+
+std::pair<float,float> BTimeClusters::getPolarEstimate_string(std::vector<int> stringCluster)
+{
+  //work with fEventMask
+  //estimate polar angle from all clustered hits
+  //find cluster with largest amplitude
+  //connect clusters which satisfy the reqirement:
+  //deltaZ ~ deltaXY/tg(Theta)
+
+  //dt=fEvent->GetImpulse(i)->GetTime();
+  
+  const double kCAngle = fGeomTel->GetCherenkovAngle();
+  const double kCAngleCos = cos(kCAngle);
+  const double kC = fGeomTel->GetVelocityVacuum();
+
+  std::vector<float> thetaMin;
+  std::vector<float> thetaMax;
+
+  //  std::cout<<"string: "<<stringCluster.size()<<std::endl;
+  
+  for (int i = 0; i < stringCluster.size(); i++) {
+    int chID=fEvent->GetImpulse(stringCluster[i])->GetChannelID();
+    for (int j = i+1; j < stringCluster.size(); j++) {
+      int chIDnext=fEvent->GetImpulse(stringCluster[j])->GetChannelID();
+      if (abs(chID-chIDnext)!=1) continue;
+      float time=fEvent->GetImpulse(stringCluster[i])->GetTime();
+      float timeNext=fEvent->GetImpulse(stringCluster[j])->GetTime();
+      float dt = time-timeNext;
+      // chPair.dt = dt; // for debugging
+      float dz = fGeomTel->At(chID)->GetZ() - fGeomTel->At(chIDnext)->GetZ();
+      //      std::cout<<" dt: "<<dt<<"   dz/kC "<<dz/kC<<std::endl;
+      if (dz < 0) {
+	dt = -dt;
+	dz = -dz;
+      }
+      if (dt >= dz / kC && dt <= dz/(kCAngleCos * kC) + fSafetyWindow) {
+	if (dt - fSafetyWindow < dz / kC) thetaMin.push_back(0);
+	else thetaMin.push_back(kCAngle - acos(kC * (dt - fSafetyWindow) * kCAngleCos / dz));
+	thetaMax.push_back(kCAngle + acos(kC * (dt -fSafetyWindow) * kCAngleCos / dz));
+      }
+      else if (dt < dz / kC && dt > - dz / kC) {
+	if (dt + fSafetyWindow > dz / kC) thetaMin.push_back(0);
+	else thetaMin.push_back(- kCAngle + acos(kC * (dt + fSafetyWindow) * kCAngleCos / dz));
+	if (dt - fSafetyWindow < - dz / kC) thetaMax.push_back(M_PI);
+	else thetaMax.push_back(kCAngle + acos(kC * (dt - fSafetyWindow) * kCAngleCos / dz));
+      }
+      else if (dt <= - dz / kC && dt >= - dz/(kCAngleCos * kC) - fSafetyWindow) {
+	thetaMin.push_back(- kCAngle + acos(kC * (dt + fSafetyWindow) * kCAngleCos / dz));
+	if (dt + fSafetyWindow > - dz / kC) thetaMax.push_back(M_PI);
+	else thetaMax.push_back(2 * M_PI - kCAngle - acos(kC * (dt + fSafetyWindow) * kCAngleCos / dz));
+      }
+      else continue;
+
+      
+      
+      /*  
+      try {
+	strings.at(fGeomTel->GetStringNum(ChID[i])).spair.push_back(chPair);
+      } catch (const std::out_of_range & ) {
+	OMString str;
+	str.spair.push_back(chPair);
+	strings.insert(std::pair<int, OMString>(fGeomTel->GetStringNum(ChID[i]), str));
+      }
+      strings.at(fGeomTel->GetStringNum(ChID[i])).channel.insert(std::pair<int, bool>(ChID[i], false));
+      strings.at(fGeomTel->GetStringNum(ChID[j])).channel.insert(std::pair<int, bool>(ChID[j], false));
+      */
+    }
+  }
+  
+  //find maximum thetaMin and minimum thetaMax
+  
+  float thetaMin_max=-1000;
+  float thetaMax_min=1000;
+  //  std::cout<<thetaMin.size()<<std::endl;
+  for (int i=0; i<thetaMin.size(); i++){
+    if (thetaMin[i]>thetaMin_max) thetaMin_max=thetaMin[i];
+    if (thetaMax[i]<thetaMax_min) thetaMax_min=thetaMax[i];
+  }
+
+  return (std::make_pair(thetaMin_max, thetaMax_min));
+    
+}
+
+
+std::pair<float,float> BTimeClusters::getClusterCenter(std::vector<int> stringCluster)
+{
+  float weightedSum=0;
+  float amplSum=0;
+  for (int i=0; i<stringCluster.size(); i++){
+    float zPulse=fGeomTel->At(fEvent->GetImpulse(stringCluster[i])->GetChannelID())->GetZ();
+    float amplPulse=fEvent->GetImpulse(stringCluster[i])->GetAmplitude();
+    weightedSum+=zPulse*amplPulse;
+    amplSum+=amplPulse;
+  }
+
+  if (weightedSum==0&&amplSum==0) return std::make_pair(0,0);
+  float zCenter=weightedSum/amplSum;
+
+  //initialise time with preliminary estimate from central pulse, then find closest to the center;
+  float tCenter=fEvent->GetImpulse(stringCluster[int(floor(stringCluster.size()/2))])->GetTime();
+  float zMin=1000;
+  for (int i=0; i<stringCluster.size(); i++){
+    float zPulse=fGeomTel->At(fEvent->GetImpulse(stringCluster[i])->GetChannelID())->GetZ();
+    if (fabs(zPulse-zCenter)<zMin){
+      zMin=fabs(zPulse-zCenter);
+      tCenter=fEvent->GetImpulse(stringCluster[i])->GetTime();
+    }
+  }
+  return std::make_pair(zCenter, tCenter);
+}
+
