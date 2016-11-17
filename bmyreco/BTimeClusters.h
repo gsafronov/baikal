@@ -64,6 +64,8 @@ class BTimeClusters : public BFilter
   std::pair<float,float> getPolarEstimate_string(std::vector<int> stringCluster);
 
   std::pair<float,float> getClusterCenter(std::vector<int> stringCluster);
+
+  std::vector<int> buildGlobalCluster(std::vector<int>* stringClusters);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
@@ -125,6 +127,7 @@ class BTimeClusters : public BFilter
   TH2F* h_effpur_mult;
   
   TH2F* h_clustered;
+  TH2F* h_clustered_highMult;
 
   TH1F* hWhatIsOM;
 

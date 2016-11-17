@@ -59,6 +59,10 @@ BMyRecoReco::BMyRecoReco(string fname, int cChan, bool useMCEvent)
   hDebugRCenter=new TH1F("hDebugRCenter","hDebugRCenter",1000,0,10);
   hDebugRhoFedor=new TH1F("hDebugRhoFedor","hDebugRhoFedor",1000,0,1000);
 
+  hAngleGenRec=new TH1F("hAngleGenRec","hAngleGenRec",600,-300,300);
+  hAngle1muGenRec=new TH1F("hAngle1muGenRec","hAngle1muGenRec",600,-300,300);
+
+  
   hNhit1mu=new TH1F("hNhit1mu","hNhit1mu",100,0,100);
   hChi2=new TH1F("hChi2","hChi2",10000,0,1000);
   hChi2_zoom1=new TH1F("hChi2_zoom1","hChi2_zoom1",1000,0,1);
@@ -99,6 +103,7 @@ BMyRecoReco::~BMyRecoReco()
   hMuMult->Write();
   hPolar1muMC->Write();
   hPolar1muRec->Write();
+  /*
   hRho1muMC->Write();
   hNhitMC->Write();
   hNhit->Write();
@@ -107,10 +112,17 @@ BMyRecoReco::~BMyRecoReco()
   hNnoiseHit->Write();
   hNhitPerChannel->Write();
   hYieldVsAmpl_reco->Write();
+  */
+
   
-  hDebugRCenter->Write();
-  hDebugRhoFedor->Write();
-  
+  //hDebugRCenter->Write();
+  //hDebugRhoFedor->Write();
+
+  hAngleGenRec->Write();
+
+  //hAngle1muGenRec->Write();
+
+  /*
   hNhit1mu->Write();
   hTimeDiff->Write();
   hTimeDiff_usedHits->Write();
@@ -138,7 +150,8 @@ BMyRecoReco::~BMyRecoReco()
 
   hNumMC_NumReco->Write();
   hDMC_dReco->Write();
-  
+  */
+
   fOUT->Close();
 }
 
@@ -199,11 +212,11 @@ Int_t BMyRecoReco::Process()
   hChi2->Fill(fRecParam->GetFuncValue(),1);
   hChi2_zoom1->Fill(fRecParam->GetFuncValue(),1);
 
-  float thetaRad=fRecParam->GetThetaRec();
-  float phiRad=fRecParam->GetPhiRec();
+  float thetaRad=M_PI*(fRecParam->GetThetaRec()/180);
+  float phiRad=M_PI*(fRecParam->GetPhiRec()/180);
 
-  float primThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
-  float primPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
+  float primThetaRad=M_PI*(fMCEvent->GetPrimaryParticlePolar())/180;
+  float primPhiRad=M_PI*(fMCEvent->GetPrimaryParticleAzimuth())/180;
   
   float angle=-1;
 
@@ -216,199 +229,11 @@ Int_t BMyRecoReco::Process()
 		  sin(thetaRad)*sin(phiRad),
 		  cos(thetaRad));
 
-
-  //RunMCAnalysis();
-
-  //for efficiency study: plot number of single muons with N >= 5 hits as a function of the amplitude threshold of selected hits
- 
+  hPolar1muMC->Fill(fMCEvent->GetPrimaryParticlePolar());
+  hPolar1muRec->Fill(fRecParam->GetThetaRec(),1);
+  hAngleGenRec->Fill(180*genVec.Angle(recVec)/M_PI,1);
   
-  //  if (fMCEvent->GetResponseMuonsN()==1&&fMCEvent->GetMuonsN()==1&&fMCEvent->GetTotalMuonsN()==1){
-  if (fMCEvent->GetResponseMuonsN()==1){
-
-    for (int iAmpl=0; iAmpl<50; iAmpl++){
-      float AMPL=1+0.2*iAmpl;
-      int nHits=0;
-      for (int iCh=0; iCh<fMCEvent->GetChannelN(); iCh++){
-	bool countChan=false;
-	for (int iPu=0; iPu<fMCEvent->GetHitChannel(iCh)->GetPulseN(); iPu++){
-	  if (fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetMagic()!=1){
-	    if(fMCEvent->GetHitChannel(iCh)->GetPulse(iPu)->GetAmplitude()>AMPL) countChan=true;
-	  }
-	}
-	if (countChan) nHits++;
-      }
-      if (nHits>=5) hYieldVsAmpl_reco->Fill(AMPL+0.1,1);
-      //     if (iAmpl==10&&nHits>=5) useEventForCalib=true;
-    }
-    
-    //filter muon based on energy and total interaction energy
-    
-    hPolar1muRec->Fill(180*fRecParam->GetThetaRec()/M_PI,1);
-    
-    angle = 180*genVec.Angle(recVec)/M_PI;
-    hAngle1muGenRec->Fill(angle,1);
-    if (angle<10&&angle>0) {
-      hNhit1mu->Fill(fRecParam->GetNhit(),1);
-      // std::cout<<"fill"<<std::endl;
-    }  
-  }    
-  //return kTRUE;
-
-  //implement track selection wrt particular OM passed in the constructor
-  
-  //get track parameters:
-  //1). Some initial point - problem, ask Fedor
-  //2). direction
-  //3). Time - problem, ask Fedor  
-  
-  //suppose we have distance: rTrackOM
-
-  //transform from X0, Y0 to X,Y,Z, copy-paste from BMuonX0Y0::DefineXYZ()
-  /*
-  TRotation m;
-  m.RotateY(thetaRad - M_PI);
-  m.RotateZ(phiRad);
-  
-  TVector3 R(fRecParam->GetX0Rec(), fRecParam->GetY0Rec(), 0);
-  */	
-  TVector3 R = xyToXYZ(recVec,fRecParam->GetX0Rec(), fRecParam->GetY0Rec());  
-  //m * R;
-  
-  /////////////////////////////////
-
-  //  std::cout<<(pow(fRecParam->GetX0Rec(),2)+pow(fRecParam->GetY0Rec(),2))<<"      "<<pow(initialX,2)+pow(initialY,2)+pow(initialZ,2)<<std::endl;
-
-  //std::cout<<"scalar prod after back rotation: "<<
-  
-  TVector3 initialPoint(R.X(),R.Y(),R.Z());
- 
-  TVector3 trackDirection(sin(thetaRad)*cos(phiRad), sin(thetaRad)*sin(phiRad), cos(thetaRad));
-  std::cout<<std::setprecision(2);
-  //<<fRecParam->GetThetaRec()<<"   "<<thetaRad<<"   "<<cos(thetaRad)<<"   "<<fRecParam->GetPhiRec()<<"   "<<phiRad<<std::endl;
-
-  //std::cout<<"scalar prod after back rotation: "<<initialX*trackDirection[0]+initialY*trackDirection[1]+initialZ*trackDirection[2]<<std::endl;
-  
-  //std::cout<<"track direction:  "<<trackDirection.X()<<"   "<<trackDirection.Y()<<"   "<<trackDirection.Z()<<std::endl;
-    
-  TVector3 tZeroPoint(initialPoint.X()-trackDirection.X()*1000, initialPoint.Y()-trackDirection.Y()*1000, initialPoint.Z()-trackDirection.Z()*1000);
-
-  //std::cout<<"tZeroPoint:  "<<tZeroPoint.X()<<"   "<<tZeroPoint.Y()<<"   "<<tZeroPoint.Z()<<std::endl;
-  //DEBUG:
-  TVector3 center(0,0,0);
-
-//  std::cout<<"distance to center:  "
-// 	   <<sqrt(pow(initialX,2)+pow(initialY,2)+pow(initialZ,2))
-//  	   <<"     analytic from tZeroPoint: "
-    // <<getTrackDistanceToOM(tZeroPoint, trackDirection, center)
-  //  	   <<std::endl;
-  
-  TVector3 xyzOM(fGeomTel->At(calibChanID)->GetX(), fGeomTel->At(calibChanID)->GetY(), fGeomTel->At(calibChanID)->GetZ());
-
-
-  //  std::cout<<"reco: "<<getTrackDistanceToOM(tZeroPoint, trackDirection, center)<<"   "<<sqrt(pow(fRecParam->GetX0Rec(),2)+pow(fRecParam->GetY0Rec(),2))<<std::endl;
-
-  hDebugRCenter->Fill(getTrackDistanceToOM(tZeroPoint, trackDirection, center)/sqrt(pow(fRecParam->GetX0Rec(),2)+pow(fRecParam->GetY0Rec(),2)),1);
-  
-  //std::cout<<"xyzOM: "<<xyzOM.X()<<"  "<<xyzOM.Y()<<"  "<<xyzOM.Z()<<std::endl;
-  //float rTrackOM=getTrackDistanceToOM(tZeroPoint, trackDirection, xyzOM); //meters
-
-  //hDistToTrack->Fill(rTrackOM,1);
-  
-  //  if (rTrackOM>10)
-  // {
-      //  std::cout<<"MISS channel 10"<<std::endl;
-      //return kTRUE;
-  //  }
-  // std::cout<<"hit channel 10: "<<rTrackOM<<std::endl;
-  
-  //find absolute (inside the event) time of hit in the OM of interest
-  float time0=0; //time0=GetTimeRec() BUT THERE IS NO SUCH FUNCTION!!! ASK FEDOR
-
-  //get time from residuals
-  
-  float T0;
-  float rhoAvg=0;
-  float rhoMax=-1; 
-  for (int i=0; i<fRecParam->GetNhit(); i++){
-    float Tres=fRecParam->GetTres(i);
-    int nch=fRecParam->GetNchGeom(i);
-    nch=24*floor(nch/24)+(24-nch%24);
-    nch=nch-1;
-    
-    TVector3 xyzHit(fGeomTel->At(nch)->GetX(), fGeomTel->At(nch)->GetY(), fGeomTel->At(nch)->GetZ());
-    
-    //propagationTime to hit from tZeroPoint:
-    float Tprop=getTimeEstimate_ns(tZeroPoint,trackDirection,xyzHit);
-    
-    //DEBUG: distance from track to hit:
-    float distUsed=getTrackDistanceToOM(tZeroPoint, trackDirection, xyzHit);
-    if (fMCEvent->GetResponseMuonsN()==1){
-      //std::cout<<"hits: "<<distUsed<<" "<<angle<<std::endl;
-      //      if (angle<10&&angle>0){
-      hDistToTrack1mu_usedHits->Fill(distUsed,1);
-      //fRecParam->GetRho(i),1);
-      //	std::cout<<"hits fill"<<std::endl;
-      //      }
-      
-      hDistToTrack_usedHits->Fill(fRecParam->GetRho(i),1);
-      
-      hDebugRhoFedor->Fill(sqrt(pow(xyzHit.X(),2)+pow(xyzHit.Y(),2)+pow(xyzHit.Z(),2)),1);
-      
-      //study chi2 vs Rho
-      rhoAvg+=fRecParam->GetRho(i);
-      if (fRecParam->GetRho(i)>rhoMax) rhoMax=fRecParam->GetRho(i);
-      
-      //experimental time:
-      int impID=fRecParam->GetImpulseNumber(i);
-      float Texp=fEvent->GetImpulseTime(impID);
-      
-      int magNum=-1;
-      
-      for (int iMCch=0; iMCch<fMCEvent->GetChannelN(); iMCch++){
-	for (int iPulse=0; iPulse<fMCEvent->GetHitChannel(iMCch)->GetPulseN(); iPulse++){
-	  if (Texp==fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetTime()) magNum=fMCEvent->GetHitChannel(iMCch)->GetPulse(iPulse)->GetMagic();
-	}
-      }
-      
-      if (magNum==1) hMagNum_usedHits->Fill(0.5,1);
-      if (magNum!=1&&magNum!=-1) hMagNum_usedHits->Fill(1.5,1);
-      if (magNum==-1) hMagNum_usedHits->Fill(2.5,1);
-      
-      T0=Texp-Tres-Tprop;
-      //std::cout<<"T0 from channel "<<nch<<"  and impulse "<<impID<<" :   "<<T0<<std::endl;
-    }
-    
-    rhoAvg=rhoAvg/fRecParam->GetNhit();
-    hChi2_rhoAvg->Fill(fRecParam->GetFuncValue(),rhoAvg,1);
-    hChi2_rhoMax->Fill(fRecParam->GetFuncValue(),rhoMax,1);
-    
-    float timeOfOMHit_estimate=T0+getTimeEstimate_ns(tZeroPoint,trackDirection, xyzOM);
-    
-    //here one should look at BMCEvent or BEvent
-    //loop over hits
-    float timeOfOMHit_actual=-1;
-    int nImpulseInCalibChan=0;
-    
-    for (int i=0; i<fEvent->GetTotImpulses(); i++) {
-      if (calibChanID==fEvent->GetImpulse(i)->GetChannelID()){
-	timeOfOMHit_actual=fEvent->GetImpulseTime(i);
-	nImpulseInCalibChan++;
-      }
-    }
-    
-    if (nImpulseInCalibChan==1) hTimeDiff->Fill(timeOfOMHit_estimate-timeOfOMHit_actual,1);  
-    
-    //DEBUG
-    for (int i=0; i<fRecParam->GetNhit(); i++){
-      int timeOfUsedHit=fEvent->GetImpulseTime(fRecParam->GetImpulseNumber(i));
-      int usedChanID=fRecParam->GetNchGeom(i);
-      TVector3 xyzUsedHit(fGeomTel->At(usedChanID)->GetX(),fGeomTel->At(usedChanID)->GetY(),fGeomTel->At(usedChanID)->GetZ());
-      float timeOfUsedHit_theor=T0+getTimeEstimate_ns(tZeroPoint, trackDirection, xyzUsedHit);
-      hTimeDiff_usedHits->Fill(timeOfUsedHit_theor-timeOfUsedHit,1);
-    }
-  }
   return kTRUE;
-  
 }
 
 //Float_t getDistance(std::vector<float> 
