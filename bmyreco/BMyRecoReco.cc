@@ -187,7 +187,7 @@ Int_t BMyRecoReco::PreProcess(MParList * pList)
     return kFALSE;
   }
 
-  fEventMask= (BEventMask*)pList->FindObject("MuonCriterionFilterMask");
+  fEventMask= (BEventMask*)pList->FindObject("TimeClusterFilterMask");
   
   return kTRUE;
 }
@@ -212,10 +212,10 @@ Int_t BMyRecoReco::Process()
   hChi2->Fill(fRecParam->GetFuncValue(),1);
   hChi2_zoom1->Fill(fRecParam->GetFuncValue(),1);
 
-  float thetaRad=M_PI*(fRecParam->GetThetaRec()/180);
-  float phiRad=M_PI*(fRecParam->GetPhiRec()/180);
+  float thetaRad=fRecParam->GetThetaRec();
+  float phiRad=fRecParam->GetPhiRec();
 
-  float primThetaRad=M_PI*(fMCEvent->GetPrimaryParticlePolar())/180;
+  float primThetaRad=M_PI*(180-fMCEvent->GetPrimaryParticlePolar())/180;
   float primPhiRad=M_PI*(fMCEvent->GetPrimaryParticleAzimuth())/180;
   
   float angle=-1;
@@ -229,9 +229,13 @@ Int_t BMyRecoReco::Process()
 		  sin(thetaRad)*sin(phiRad),
 		  cos(thetaRad));
 
-  hPolar1muMC->Fill(fMCEvent->GetPrimaryParticlePolar());
-  hPolar1muRec->Fill(fRecParam->GetThetaRec(),1);
+  hPolar1muMC->Fill(180-fMCEvent->GetPrimaryParticlePolar());
+  hPolar1muRec->Fill(180*fRecParam->GetThetaRec()/M_PI,1);
   hAngleGenRec->Fill(180*genVec.Angle(recVec)/M_PI,1);
+
+
+  //Analyse fEventMask
+  //1) find how many tracks are matched to the cluster
   
   return kTRUE;
 }
@@ -320,91 +324,4 @@ TVector3 BMyRecoReco::xyToXYZ(TVector3 s, float X, float Y)
 
   return R;
 }
-  //  float initialX = R.X();
-  //  float initialY = R.Y();
-  //  float initialZ = R.Z();
-  /////////////////////////////////
-
-
-int BMyRecoReco::RunMCAnalysis()
-{
-  float thetaRad=fRecParam->GetThetaRec();
-  float phiRad=fRecParam->GetPhiRec();
-
-  float primThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
-  float primPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
-
-  hMuMult->Fill(fMCEvent->GetResponseMuonsN(),1);
-  hPolar1muMC->Fill(fMCEvent->GetPrimaryParticlePolar(),1);
-  
-  float angle=-1;
-
-  TVector3 genVec(sin(primThetaRad)*cos(primPhiRad),
-		  sin(primThetaRad)*sin(primPhiRad),
-		  cos(primThetaRad));
-  
-  if (fMCEvent->GetResponseMuonsN()!=1) return 0;
-
-  TVector3 inPoTrack(fMCEvent->GetTrack(0)->GetX()-1000*genVec.X(), fMCEvent->GetTrack(0)->GetY()-1000*genVec.Y(), fMCEvent->GetTrack(0)->GetZ()-1000*genVec.Z());
-
-  TVector3 zero(0,0,0);
-  float rho=getTrackDistanceToOM(inPoTrack, genVec, zero);
-  hRho1muMC->Fill(rho,1);
-  
-
-  for (int i=0; i<fMCEvent->GetResponseMuonsN(); i++){
-    int nStrongInt=0;
-    for (int j=0; j<fMCEvent->GetTrack(0)->GetInteractionN(); j++){
-      if (fMCEvent->GetTrack(0)->GetInteraction(j)->GetEnergy()>0.1) nStrongInt++;
-    }
-  }
-
-  
-  int nChans=fMCEvent->GetChannelN();
-  int nPulses=0;
-  int nDirectPulses=0;
-  int nShowerPulses=0;
-  int nNoisePulses=0;
-  for (int i=0; i<nChans; i++){
-    bool useChan=false;
-    for (int iP=0; iP<fMCEvent->GetHitChannel(i)->GetPulseN(); iP++){
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()+1000==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
-	useChan=true;
-	nDirectPulses++;
-	nPulses++;
-      }
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()>1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
-	//useChan=true;
-	nShowerPulses++;
-	nPulses++;
-      }
-      if (fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetMagic()==1&&fMCEvent->GetHitChannel(i)->GetPulse(iP)->GetAmplitude()>3) {
-	nNoisePulses++;
-	nPulses++;
-      }
-    }
-    
-    hNhitMC->Fill(nPulses,1);
-    hNdirectHit->Fill(nDirectPulses,1);
-    hNshowerHit->Fill(nShowerPulses,1);
-    hNnoiseHit->Fill(nNoisePulses,1);
-
-    if (!useChan) continue;
-
-    int idch=fMCEvent->GetHitChannel(i)->GetChannelID()-1;
-    idch=24*floor(idch/24)+(24-idch%24);
-    idch=idch-1;
-
-    hNhitPerChannel->Fill(idch,1);
-
-    TVector3 chanXYZ(fGeomTel->At(idch)->GetX(),fGeomTel->At(idch)->GetY(),fGeomTel->At(idch)->GetZ());
-    //hRealHitsALL->Fill(floor((idch)/24),(idch)%24+1);
-
-    float dist=getTrackDistanceToOM(inPoTrack, genVec, chanXYZ);
-    hDistToTrackMC->Fill(dist,1);    
-  }
-
-  
-
-  return 0;
-}
+ 

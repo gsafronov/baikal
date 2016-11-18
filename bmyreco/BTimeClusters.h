@@ -46,7 +46,7 @@ class BTimeClusters : public BFilter
 
   TString     fInputMaskName;
   
-  std::vector<int> buildStringCluster(int iString, std::vector<int> string_impulses);
+  std::vector<std::vector<int> > buildStringClusters(int iString, std::vector<int> string_impulses);
   std::vector<int> addImpulses(std::vector<int> hotspot, std::vector<int> string_impulses);
 
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM);
@@ -65,7 +65,7 @@ class BTimeClusters : public BFilter
 
   std::pair<float,float> getClusterCenter(std::vector<int> stringCluster);
 
-  std::vector<int> buildGlobalCluster(std::vector<int>* stringClusters);
+  std::vector<int> buildGlobalCluster(std::vector<std::vector<int> >* stringClusters);
   
   std::vector<int> chanIDs;
   bool fMaskNoise;
