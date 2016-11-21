@@ -4,13 +4,14 @@
 #include <math.h>
 #include <vector>
 #include <cstddef>
+#include "TObject.h"
 
 class BEvent;
 class BMCEvent;
 class BGeomTel;
 class BImpulse;
 
-class BStringCluster
+class BStringCluster : public TObject
 {
  private:
   BEvent* fEvent;
@@ -25,7 +26,7 @@ class BStringCluster
   float fSumAmpl;
   std::vector<int> fHotSpot;
   std::vector<int> fElements;
-
+  
   bool fUseMCevent;
   
   //  std::vector<int> fMagicNumbers;
@@ -37,16 +38,18 @@ class BStringCluster
   std::vector<std::vector<int> > fTrackID; 
   
   std::pair<float,float> getClusterCenter(std::vector<int> stringCluster);
-
+  
   float calculateSumAmpl();
   float calculateHotSpotAmpl();
   
  public:
-  BStringCluster(int iString, std::vector<int> hotspot, BEvent* event, BGeomTel* geomtel,  bool useMCevent = false, BMCEvent *mcevent = NULL);
   
+  BStringCluster();
+  BStringCluster(int iString, std::vector<int> hotspot, BEvent* event, BGeomTel* geomtel,  bool useMCevent = false, BMCEvent *mcevent = NULL);
   ~BStringCluster();
-
+  
   int AddImpulse(int id);
+  //  int RemoveImpulse(int id);
   int GetSize() {return fSize;}
   int GetStringID() {return fString;}
   float GetCenterZ() {return fCenterZ;}
@@ -55,6 +58,7 @@ class BStringCluster
   float GetSumAmpl() {return fSumAmpl;}
   
   BImpulse* GetConstituent(int id);
+  int GetImpulseID(int id) {return fElements[id];}
   
   int GetHotSpotMax();
   int GetHotSpotMin();
@@ -63,7 +67,8 @@ class BStringCluster
   
   //  bool HasTrack(int id);
   
-  //  ClassDef(BStringCluster,1);
+  ClassDef(BStringCluster,0);
+    
 };
 
 #endif

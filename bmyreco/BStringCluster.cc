@@ -3,7 +3,30 @@
 #include "BMCEvent.h"
 #include "BGeomTel.h"
 
-//ClassImp(BStringCluster);
+ClassImp(BStringCluster);
+
+BStringCluster::BStringCluster():
+  fHasShowerHit(0), fHasDirectHit(0), fHasNoiseHit(0), fTrackID(0), fElements(0)  
+{
+  fMCEvent=NULL;
+  fGeomTel=NULL;
+  
+  fSize=0;
+  fString=0;
+
+  fCenterZ=0;
+  fCenterTime=0;
+  
+  fHotSpotAmpl=0;
+  fSumAmpl=0;
+
+  fUseMCevent=false;
+}
+
+BStringCluster::~BStringCluster()
+{
+}
+
 
 BStringCluster::BStringCluster(int iString, std::vector<int> hotspot, BEvent* event, BGeomTel* geomtel, bool useMCevent, BMCEvent* mcevent):
   fHasShowerHit(0), fHasDirectHit(0), fHasNoiseHit(0), fTrackID(0) 
