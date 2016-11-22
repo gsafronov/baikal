@@ -135,3 +135,5 @@ int BStringCluster::GetHotSpotMin()
   return min(fEvent->GetImpulse(fHotSpot[0])->GetAmplitude(),
 	     fEvent->GetImpulse(fHotSpot[1])->GetAmplitude());
 }
+
+

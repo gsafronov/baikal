@@ -187,7 +187,7 @@ Bool_t BClusterProducer::Filter()
   }
 
   std::cout<<"build global clusters"<<std::endl;
-  std::vector<BStringCluster> globalCluster=buildGlobalCluster(stringClusters);
+   std::vector<BStringCluster> globalCluster=buildGlobalCluster(stringClusters);
 
   std::cout<<"setting mask"<<std::endl;
   for (int i=0; i<globalCluster.size(); i++){
@@ -273,8 +273,8 @@ std::vector<BStringCluster> BClusterProducer::findHotSpots(int iString, std::vec
 	float timeCand=fEvent->GetImpulse(string_impulses[iCand])->GetTime();
 	if (fabs(timeCand-timePulse)<(abs(id_increment)*15/cWater+fSafetyWindow)&&(!isClustered[iCand])){
 	  std::vector<int> spot;
-	  spot.push_back(iCand);
-	  spot.push_back(iPulse);
+	  spot.push_back(string_impulses[iCand]);
+	  spot.push_back(string_impulses[iPulse]);
 	  BStringCluster strClu(iString, spot, fEvent, fGeomTel);
 	  hot_spots.push_back(strClu);
 	  isClustered[iPulse]=true;
@@ -287,12 +287,12 @@ std::vector<BStringCluster> BClusterProducer::findHotSpots(int iString, std::vec
   BStringCluster buf[hot_spots.size()];
   
   for (int iHotspot=0; iHotspot<hot_spots.size(); iHotspot++){
+    std::cout<<"       hotspot: "<<hot_spots[iHotspot].GetImpulseID(0)<<"    "<<hot_spots[iHotspot].GetImpulseID(1)<<"    "<<hot_spots[iHotspot].GetConstituent(0)->GetChannelID()<<"   "<<hot_spots[iHotspot].GetConstituent(1)->GetChannelID()<<"    ampl: "<<hot_spots[iHotspot].GetHotSpotAmpl()<<std::endl;
     float sumAmpl=hot_spots[iHotspot].GetSumAmpl();
     int nLarger=0;
     for (int i=0; i<hot_spots.size(); i++){
       float probeSumAmpl=hot_spots[i].GetSumAmpl();
       if (sumAmpl<probeSumAmpl) nLarger++;
-      std::cout<<"       hotspot: "<<hot_spots[i].GetConstituent(0)->GetChannelID()<<"   "<<hot_spots[i].GetConstituent(1)->GetChannelID()<<std::endl;
     }
     buf[nLarger]=hot_spots[iHotspot];
   }
@@ -315,7 +315,8 @@ int BClusterProducer::addImpulses(BStringCluster* hotspot, std::vector<int> stri
   
   for (int i=0; i<hotspot->GetSize(); i++) storeys_pulse[(hotspot->GetConstituent(i)->GetChannelID())%24]=hotspot->GetConstituent(i);
   
-  for (int iSeed=0; iSeed<hotspot->GetSize(); iSeed++){
+  for (int iSeed=0; iSeed<2; iSeed++){
+    bool added=false;
     float seed_time=hotspot->GetConstituent(iSeed)->GetTime();
     int seed_channel_id=hotspot->GetConstituent(iSeed)->GetChannelID();
     int seed_storey=(seed_channel_id)%24;
@@ -340,7 +341,7 @@ int BClusterProducer::addImpulses(BStringCluster* hotspot, std::vector<int> stri
       if (fVerbose) std::cout<<"time: "<<chan_time<<"       chanID: "<<chanID<<std::endl;
       if (chanID==seed_channel_id+id_increment){
 	if (chan_time>time_early&&chan_time<time_late){
-	  hotspot->AddImpulse(string_impulses[iPulse]);
+ 	  hotspot->AddImpulse(string_impulses[iPulse]);
 	  storeys_pulse[chanID%24]=fEvent->GetImpulse(string_impulses[iPulse]);
 	}
       }
@@ -351,6 +352,8 @@ int BClusterProducer::addImpulses(BStringCluster* hotspot, std::vector<int> stri
       if (hotspot->GetSize()==0) std::cout<<"super fail"<<std::endl;
       if (hotspot->GetSize()>2) std::cout<<"ok"<<std::endl;
     }
+
+    if (!added) continue;
     
     std::cout<<"           up to 7"<<std::endl;
     //add up to 7 channels
