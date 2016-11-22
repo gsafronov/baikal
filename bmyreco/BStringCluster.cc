@@ -1,12 +1,11 @@
 #include "BStringCluster.h"
 #include "BEvent.h"
 #include "BMCEvent.h"
-#include "BGeomTel.h"
 
 ClassImp(BStringCluster);
 
 BStringCluster::BStringCluster():
-  fHasShowerHit(0), fHasDirectHit(0), fHasNoiseHit(0), fTrackID(0), fElements(0)  
+  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0), fElements(0)  
 {
   fMCEvent=NULL;
   fGeomTel=NULL;
@@ -29,7 +28,7 @@ BStringCluster::~BStringCluster()
 
 
 BStringCluster::BStringCluster(int iString, std::vector<int> hotspot, BEvent* event, BGeomTel* geomtel, bool useMCevent, BMCEvent* mcevent):
-  fHasShowerHit(0), fHasDirectHit(0), fHasNoiseHit(0), fTrackID(0) 
+  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0) 
 {
   fEvent=event;
   fMCEvent=mcevent;
@@ -37,6 +36,9 @@ BStringCluster::BStringCluster(int iString, std::vector<int> hotspot, BEvent* ev
   
   fElements.push_back(hotspot[0]);
   fElements.push_back(hotspot[1]);
+
+  fHotSpot.push_back(hotspot[0]);
+  fHotSpot.push_back(hotspot[1]);
   
   fSize=fElements.size();
   fString=iString;
@@ -50,22 +52,16 @@ BStringCluster::BStringCluster(int iString, std::vector<int> hotspot, BEvent* ev
 
   fUseMCevent=useMCevent;
 
-  /*
   if (fUseMCevent){
-    for (int i=0; i<hotspot.size(); i++){
-      fHasShowerHit=matchShowers(hotspot[i]);
-      fHasDirectHit=matchDirect(hotspot[i]);
-      hHasNoiseHit=matchNoise(hotspot[i]);
-      
-      fTrackID.push_back(getMatchedTrackIDs(hotspot[i])); 
-    }
+    doMCMatching();
   }
-  */
+  
 }
 
 int BStringCluster::AddImpulse(int id)
 {
   fElements.push_back(id);
+  fSize=fElements.size();
   std::pair<float, float> center=getClusterCenter(fElements);
   fCenterZ=center.first;
   fCenterTime=center.second;
@@ -86,8 +82,8 @@ float BStringCluster::calculateSumAmpl()
 float BStringCluster::calculateHotSpotAmpl()
 {
   float amplSum=0;
-  for (int i=0; i<fElements.size(); i++){
-    amplSum+=fEvent->GetImpulse(fElements[i])->GetAmplitude();
+  for (int i=0; i<fHotSpot.size(); i++){
+    amplSum+=fEvent->GetImpulse(fHotSpot[i])->GetAmplitude();
   }
   return amplSum;
 }
@@ -136,4 +132,59 @@ int BStringCluster::GetHotSpotMin()
 	     fEvent->GetImpulse(fHotSpot[1])->GetAmplitude());
 }
 
+
+int BStringCluster::doMCMatching()
+{
+  int mc_n_channels=fMCEvent->GetChannelN();
+  fNTracksPerCluster=0;
+  int globalTrackCounter[100]={0};
+  for (int iPulse=0; iPulse<fSize; iPulse++){
+    int chID=fEvent->GetImpulse(fElements[iPulse])->GetChannelID();
+    float time=fEvent->GetImpulse(fElements[iPulse])->GetTime();
+    float noise=0;
+    float direct=0;
+    float shower=0;
+    int trackIDs[100]={0};
+    for (int iMCChan=0; iMCChan<mc_n_channels; iMCChan++){
+      int mcchID=fMCEvent->GetHitChannel(iMCChan)->GetChannelID()-1;
+      mcchID=24*floor(mcchID/24)+(24-mcchID%24);
+      mcchID=mcchID-1;
+      if (mcchID!=chID) continue;
+      BMCHitChannel* mcChan=fMCEvent->GetHitChannel(iMCChan);
+      int mc_n_pulses=mcChan->GetPulseN();
+      
+      for (int iMCPulse=0; iMCPulse<mc_n_pulses; iMCPulse++){
+     	if ((mcChan->GetPulse(iMCPulse)->GetTime()-time)<20) {
+	  //std::cout<<"yo!   "<<time<<"   "<<mcChan->GetPulse(iMCPulse)->GetTime()<<std::endl;
+	  int magic=mcChan->GetPulse(iMCPulse)->GetMagic();
+	  if (magic==1) noise+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
+	  if (magic<0) {
+	    direct+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
+	    trackIDs[magic+1000]++;
+	    globalTrackCounter[magic+1000]++;
+	  }
+	  if (magic>=1000) {
+	    shower+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
+	    trackIDs[magic%1000]++;
+	    globalTrackCounter[magic%1000]++;
+	  }
+	}
+      }
+    }
+    fSignalShower.push_back(shower);
+    fSignalDirect.push_back(direct);
+    fNoise.push_back(noise);
+    std::vector<int> tracks;
+    for (int i=0; i<100; i++){
+      if (trackIDs[i]!=0) tracks.push_back(i);
+    }
+    fTrackID_hit.push_back(tracks);
+  }
+  for (int i=0; i<100; i++){
+    if (globalTrackCounter[i]!=0) {
+      fNTracksPerCluster++;
+      fTrackID_cluster.push_back(i);
+    }
+  }
+}
 

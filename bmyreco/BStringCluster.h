@@ -5,10 +5,10 @@
 #include <vector>
 #include <cstddef>
 #include "TObject.h"
+#include "BGeomTel.h"
 
 class BEvent;
 class BMCEvent;
-class BGeomTel;
 class BImpulse;
 
 class BStringCluster : public TObject
@@ -29,18 +29,20 @@ class BStringCluster : public TObject
   
   bool fUseMCevent;
   
-  //  std::vector<int> fMagicNumbers;
+  std::vector<float> fSignalShower;
+  std::vector<float> fSignalDirect;
+  std::vector<float> fNoise;
   
-  std::vector<bool> fHasShowerHit;
-  std::vector<bool> fHasDirectHit;
-  std::vector<bool> fHasNoiseHit;
-  
-  std::vector<std::vector<int> > fTrackID; 
+  std::vector<std::vector<int> > fTrackID_hit;
+  std::vector<int> fTrackID_cluster;
+  int fNTracksPerCluster;
   
   std::pair<float,float> getClusterCenter(std::vector<int> stringCluster);
   
   float calculateSumAmpl();
   float calculateHotSpotAmpl();
+
+  int doMCMatching();
   
  public:
   
@@ -52,6 +54,8 @@ class BStringCluster : public TObject
   //  int RemoveImpulse(int id);
   int GetSize() {return fSize;}
   int GetStringID() {return fString;}
+  float GetX() {return fGeomTel->At(fString*24)->GetX();}
+  float GetY() {return fGeomTel->At(fString*24)->GetY();} 
   float GetCenterZ() {return fCenterZ;}
   float GetCenterTime() {return fCenterTime;}
   float GetHotSpotAmpl() {return fHotSpotAmpl;}
@@ -62,10 +66,16 @@ class BStringCluster : public TObject
   
   int GetHotSpotMax();
   int GetHotSpotMin();
+
+  int GetNSignalTracksHit(int id) {return fTrackID_hit[id].size();}
+  std::vector<int> GetTracksHit(int id) {return fTrackID_hit[id];}
   
-  //  int GetNtracks(int id) {return fTrackID[id].size();}
-  
-  //  bool HasTrack(int id);
+  float GetNoise(int id) {return fNoise[id];}
+  float GetSignalDirect(int id) {return fSignalDirect[id];}
+  float GetSignalShower(int id) {return fSignalShower[id];}
+
+  int GetNSignalTracks() {return fNTracksPerCluster;}
+  std::vector<int> GetTracks() {return fTrackID_cluster;}
   
   ClassDef(BStringCluster,0);
     

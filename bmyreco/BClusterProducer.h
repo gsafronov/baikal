@@ -88,53 +88,13 @@ class BClusterProducer : public BFilter
   int fSignalStrings;
   
   TFile* fOUT;
-  TH1F* h_hits_per_string_2pe;
-  TH1F* h_hits_2pe;
-  TH1F* h_fired_strings_2pe;
-  
-  TH1F* h_1mu_hits_per_string_2pe;
-  TH1F* h_1mu_hits_2pe;
-  TH1F* h_1mu_fired_strings_2pe;
 
-  TH1F* hreco_hits_per_string;
-  TH1F* hreco_fired_strings;
-  TH1F* hreco_hits;
+  TH1F* h_ntracks;
+  TH1F* h_strClu_ntracks;
+  TH1F* h_gloClu_ntracks;
+  TH1F* h_pulse_ntracks;
+  TH1F* h_strClu_noiseFrac;
 
-  TH2F* h_strings_reco_vs_gen;
-  TH2F* h_strings_bevt_vs_gen;
-
-  TH2F* h_hitsPerString_reco_vs_gen;
-  TH2F* h_hitsPerString_bevt_vs_gen;
-
-  TH2F* h_smuons_polar_vs_rho;
-  TH2F* h_rcand_polar_vs_rho;
-  TH2F* h_rcandFrac_polar_vs_rho;
-  TProfile2D* h_strings_polar_vs_rho;
-  
-  TH1F* h_muon_energy;
-  TH1F* h_muon_energy_rcand_gen;
-  TH1F* h_muon_energy_rcand;
-
-  TH2F* h_hitSignal_reco_vs_gen;
-
-  TH2F* h_noiseFrac_clustered;
-  TH2F* h_signalFrac_clustered;
-  TH2F* h_stringSignalFrac_clustered;
-  
-  TH2F* h_clusteredFrac_noise;
-  TH2F* h_clusteredFrac_signal;
-
-  TH2F* h_effpur_mult;
-  
-  TH2F* h_clustered;
-  TH2F* h_clustered_highMult;
-
-  TH1F* hWhatIsOM;
-
-  TH2F* hitMap_gen;
-  TH2F* hitMap_det;
-  
-  //TH2F* h_spots_per_string;
   
  public:
   BClusterProducer(const char *name = NULL, const char *title = NULL);
