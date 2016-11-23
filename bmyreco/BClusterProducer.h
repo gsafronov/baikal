@@ -90,6 +90,9 @@ class BClusterProducer : public BFilter
   TFile* fOUT;
 
   TH1F* h_ntracks;
+  TH1F* h_ntracks_6hits3strings;
+  TH1F* h_debug;
+  TH2F* h_gloClu_vs_firedStrings;
   TH1F* h_strClu_ntracks;
   TH1F* h_gloClu_ntracks;
   TH1F* h_pulse_ntracks;
