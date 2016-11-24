@@ -142,7 +142,7 @@ Bool_t BClusterProducer::Filter()
   int n_impulse_channels=fMCEvent->GetChannelN();
 
   h_ntracks->Fill(fMCEvent->GetResponseMuonsN(),1);
-  if (fMCEvent->GetResponseMuonsN()>1) return kFALSE;
+  if (fMCEvent->GetResponseMuonsN()<1) return kFALSE;
 
   //check multiplicity in event with 6 hits at 3 strings
   int firedString[8]={0};
@@ -199,6 +199,7 @@ Bool_t BClusterProducer::Filter()
     float max=-1;
     BStringCluster leadingCluster;
     for (int k=0; k<stringClusters[iString].size(); k++){
+      if (stringClusters[iString][k].GetSize()>4) h_strClu_ntracks->Fill(stringClusters[iString][k].GetNSignalTracks(),1);
       if (max<stringClusters[iString][k].GetHotSpotAmpl()){
 	max=stringClusters[iString][k].GetHotSpotAmpl();
 	leadingCluster=stringClusters[iString][k];
@@ -208,7 +209,8 @@ Bool_t BClusterProducer::Filter()
       }
       //      h_strClu_ntracks->Fill(stringClusters[iString][k].GetNSignalTracks(),1);
     }
-    if (leadingCluster.GetHotSpotAmpl()/leadingCluster.GetSumAmpl() > 0.8) h_strClu_ntracks->Fill(leadingCluster.GetNSignalTracks(),1);
+    //if (leadingCluster.GetHotSpotAmpl()/leadingCluster.GetSumAmpl() > 0.8)
+    // if (leadingCluster.GetSize()>3) h_strClu_ntracks->Fill(leadingCluster.GetNSignalTracks(),1);
     //    h_strClu_noiseFrac->Fill(
   }
   
@@ -222,9 +224,9 @@ Bool_t BClusterProducer::Filter()
     }
   }
   
-  if (!(fMCEvent->GetResponseMuonsN()==1&&nStrings>2&&nHits>5&&firedString[7]>1)) return kFALSE;
+  //  if (!(fMCEvent->GetResponseMuonsN()==1&&nStrings>2&&nHits>5&&firedString[7]>1)) return kFALSE;
 
-  std::cout<<">>>>>>>>>>>>>NEXT EVENT"<<std::endl;
+  //  std::cout<<">>>>>>>>>>>>>NEXT EVENT"<<std::endl;
   
   std::vector<BStringCluster> globalCluster=buildGlobalCluster(stringClusters);
 
@@ -248,7 +250,7 @@ Bool_t BClusterProducer::Filter()
     //    std::cout<<std::endl;
   }
   
-  if (fMCEvent->GetResponseMuonsN()==1&&nStrings>2&&nHits>5&&firedString[7]>1) std::cout<<"fired strings: "<<nStrings<<"    cluster: "<<globalCluster.size()<<"   "<<nStr<<std::endl;
+  //  if (fMCEvent->GetResponseMuonsN()==1&&nStrings>2&&nHits>5&&firedString[7]>1) std::cout<<"fired strings: "<<nStrings<<"    cluster: "<<globalCluster.size()<<"   "<<nStr<<std::endl;
   
   return kTRUE;
 }
@@ -523,28 +525,28 @@ std::vector<BStringCluster> BClusterProducer::buildGlobalCluster(std::vector<BSt
 	float deltaR=sqrt(pow(seedX-linkX,2)+pow(seedY-linkY,2)+pow(seedZ-linkZ,2));
 	
 	int direction=(linkZ-seedZ)/fabs(linkZ-seedZ);
-	std::cout<<"linking: "<<fabs(linkTime-seedTime)<<"  times: "<<linkTime<<"   "<<seedTime<<"   "<<deltaR<<"   "<<deltaR/cVacuum<<std::endl;
+	//	std::cout<<"linking: "<<fabs(linkTime-seedTime)<<"  times: "<<linkTime<<"   "<<seedTime<<"   "<<deltaR<<"   "<<deltaR/cVacuum<<std::endl;
 	
 	if (fabs(linkTime-seedTime)<deltaR/cVacuum - 200 || fabs(linkTime-seedTime)>deltaR/cVacuum + 200) continue;
 	//	std::cout<<"linking: "<<fabs(linkTime-seedTime)<<"  times: "<<linkTime<<"   "<<seedTime<<"   "<<deltaR<<"   "<<deltaR/cVacuum<<std::endl;
 	globalCluster.push_back(stringClusters[iStringLink][iClusterLink]);
       }
     }
-    std::cout<<"got cluster: "<<globalCluster.size()<<std::endl;
+    //    std::cout<<"got cluster: "<<globalCluster.size()<<std::endl;
     if (globalCluster.size()>2){
       //check if chosen clusters are on the same straight line.
-      std::cout<<"cluster bigger than 2: "<<globalCluster.size()<<"   seedZ: "<<seedZ<<std::endl;
+      //      std::cout<<"cluster bigger than 2: "<<globalCluster.size()<<"   seedZ: "<<seedZ<<std::endl;
       for (int iClu=1; iClu<globalCluster.size(); iClu++){
-	std::cout<<"      vec0: "<<globalCluster[iClu].GetStringID()<<"   xyz: "<<globalCluster[iClu].GetX()<<" "<<globalCluster[iClu].GetY()<<" "<<globalCluster[iClu].GetCenterZ()<<std::endl;
+	//	std::cout<<"      vec0: "<<globalCluster[iClu].GetStringID()<<"   xyz: "<<globalCluster[iClu].GetX()<<" "<<globalCluster[iClu].GetY()<<" "<<globalCluster[iClu].GetCenterZ()<<std::endl;
 	TVector3 vec0(seedX-globalCluster[iClu].GetX(), seedY-globalCluster[iClu].GetY(), seedZ-globalCluster[iClu].GetCenterZ());
 	for (int iCluConn=iClu+1; iCluConn<globalCluster.size(); iCluConn++){
 	  TVector3 vec1(seedX-globalCluster[iCluConn].GetX(), seedY-globalCluster[iCluConn].GetY(), seedZ-globalCluster[iCluConn].GetCenterZ());
 	  float angle=vec0.Angle(vec1);
-	  std::cout<<"              vec1: "<<globalCluster[iCluConn].GetStringID()<<"   xyz: "<<globalCluster[iCluConn].GetX()<<" "<<globalCluster[iCluConn].GetY()<<" "<<globalCluster[iCluConn].GetCenterZ()<<"     angle: "<<180*angle/M_PI<<std::endl;
+	  //	  std::cout<<"              vec1: "<<globalCluster[iCluConn].GetStringID()<<"   xyz: "<<globalCluster[iCluConn].GetX()<<" "<<globalCluster[iCluConn].GetY()<<" "<<globalCluster[iCluConn].GetCenterZ()<<"     angle: "<<180*angle/M_PI<<std::endl;
 	  if (angle < M_PI*0.8) {
 	    //	    globalCluster.erase(globalCluster.begin()+iCluConn);
 	  }
-	  else std::cout<<"take.   angle between vectors: "<<180*angle/M_PI<<std::endl;
+	  //	  else std::cout<<"take.   angle between vectors: "<<180*angle/M_PI<<std::endl;
 	}
       }
     }

@@ -154,7 +154,7 @@ int BStringCluster::doMCMatching()
       int mc_n_pulses=mcChan->GetPulseN();
       
       for (int iMCPulse=0; iMCPulse<mc_n_pulses; iMCPulse++){
-     	if ((mcChan->GetPulse(iMCPulse)->GetTime()-time)<20) {
+     	if ((mcChan->GetPulse(iMCPulse)->GetTime()-time)<0.1) {
 	  //std::cout<<"yo!   "<<time<<"   "<<mcChan->GetPulse(iMCPulse)->GetTime()<<std::endl;
 	  int magic=mcChan->GetPulse(iMCPulse)->GetMagic();
 	  if (magic==1) noise+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
@@ -178,6 +178,7 @@ int BStringCluster::doMCMatching()
     for (int i=0; i<100; i++){
       if (trackIDs[i]!=0) tracks.push_back(i);
     }
+    if (tracks.size()==16) std::cout<<"bug: "<<chID<<"  "<<fMCEvent->GetResponseMuonsN()<<std::endl;
     fTrackID_hit.push_back(tracks);
   }
   for (int i=0; i<100; i++){
