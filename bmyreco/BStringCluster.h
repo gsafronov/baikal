@@ -32,7 +32,8 @@ class BStringCluster : public TObject
   std::vector<float> fSignalShower;
   std::vector<float> fSignalDirect;
   std::vector<float> fNoise;
-  
+
+  std::vector<int> fNTracksPerHit;
   std::vector<std::vector<int> > fTrackID_hit;
   std::vector<int> fTrackID_cluster;
   int fNTracksPerCluster;
@@ -67,7 +68,7 @@ class BStringCluster : public TObject
   int GetHotSpotMax();
   int GetHotSpotMin();
 
-  int GetNSignalTracksHit(int id) {return fTrackID_hit[id].size();}
+  int GetNSignalTracksHit(int id) {return fNTracksPerHit[id];}
   std::vector<int> GetTracksHit(int id) {return fTrackID_hit[id];}
   
   float GetNoise(int id) {return fNoise[id];}

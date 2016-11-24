@@ -5,7 +5,7 @@
 ClassImp(BStringCluster);
 
 BStringCluster::BStringCluster():
-  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0), fElements(0)  
+  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0), fElements(0), fNTracksPerHit(0)  
 {
   fMCEvent=NULL;
   fGeomTel=NULL;
@@ -28,7 +28,7 @@ BStringCluster::~BStringCluster()
 
 
 BStringCluster::BStringCluster(int iString, std::vector<int> hotspot, BEvent* event, BGeomTel* geomtel, bool useMCevent, BMCEvent* mcevent):
-  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0) 
+  fSignalShower(0), fSignalDirect(0), fNoise(0), fTrackID_hit(0), fTrackID_cluster(0), fNTracksPerHit(0)
 {
   fEvent=event;
   fMCEvent=mcevent;
@@ -66,6 +66,9 @@ int BStringCluster::AddImpulse(int id)
   fCenterZ=center.first;
   fCenterTime=center.second;
   fSumAmpl=calculateSumAmpl();
+  if (fUseMCevent){
+    doMCMatching();
+  }
   return 1;
 }
 
@@ -138,13 +141,20 @@ int BStringCluster::doMCMatching()
   int mc_n_channels=fMCEvent->GetChannelN();
   fNTracksPerCluster=0;
   int globalTrackCounter[100]={0};
+  fNTracksPerHit.erase(fNTracksPerHit.begin(), fNTracksPerHit.end());
+  //  fNTracksPerHit.clear();
+  fTrackID_hit.clear();
+  fTrackID_cluster.clear();
+   
   for (int iPulse=0; iPulse<fSize; iPulse++){
+    //   std::cout<<"NEXT PULSE"<<std::endl;
     int chID=fEvent->GetImpulse(fElements[iPulse])->GetChannelID();
     float time=fEvent->GetImpulse(fElements[iPulse])->GetTime();
     float noise=0;
     float direct=0;
     float shower=0;
     int trackIDs[100]={0};
+    
     for (int iMCChan=0; iMCChan<mc_n_channels; iMCChan++){
       int mcchID=fMCEvent->GetHitChannel(iMCChan)->GetChannelID()-1;
       mcchID=24*floor(mcchID/24)+(24-mcchID%24);
@@ -154,35 +164,41 @@ int BStringCluster::doMCMatching()
       int mc_n_pulses=mcChan->GetPulseN();
       
       for (int iMCPulse=0; iMCPulse<mc_n_pulses; iMCPulse++){
-     	if ((mcChan->GetPulse(iMCPulse)->GetTime()-time)<0.1) {
-	  //std::cout<<"yo!   "<<time<<"   "<<mcChan->GetPulse(iMCPulse)->GetTime()<<std::endl;
+     	if (fabs(mcChan->GetPulse(iMCPulse)->GetTime()-time)<0.0001) {
 	  int magic=mcChan->GetPulse(iMCPulse)->GetMagic();
+	  //std::cout<<"yo!   "<<time<<"   "<<mcChan->GetPulse(iMCPulse)->GetTime()<<"  "<<magic<<std::endl;
 	  if (magic==1) noise+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
 	  if (magic<0) {
 	    direct+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
-	    trackIDs[magic+1000]++;
-	    globalTrackCounter[magic+1000]++;
+	    trackIDs[magic+1000-1]++;
+	    globalTrackCounter[magic+1000-1]++;
 	  }
 	  if (magic>=1000) {
 	    shower+=mcChan->GetPulse(iMCPulse)->GetAmplitude();
-	    trackIDs[magic%1000]++;
-	    globalTrackCounter[magic%1000]++;
+	    trackIDs[magic%1000-1]++;
+	    globalTrackCounter[magic%1000-1]++;
 	  }
 	}
       }
     }
+    
     fSignalShower.push_back(shower);
     fSignalDirect.push_back(direct);
     fNoise.push_back(noise);
     std::vector<int> tracks;
+    fNTracksPerHit.push_back(0);
     for (int i=0; i<100; i++){
-      if (trackIDs[i]!=0) tracks.push_back(i);
+      if (trackIDs[i]>=1){
+	tracks.push_back(i);
+	fNTracksPerHit[iPulse]++;
+      }
     }
-    if (tracks.size()==16) std::cout<<"bug: "<<chID<<"  "<<fMCEvent->GetResponseMuonsN()<<std::endl;
+    //    if (tracks.size()>0) std::cout<<"bug: "<<chID<<"  "<<fMCEvent->GetResponseMuonsN()<<std::endl;
     fTrackID_hit.push_back(tracks);
   }
+
   for (int i=0; i<100; i++){
-    if (globalTrackCounter[i]!=0) {
+    if (globalTrackCounter[i]>=1) {
       fNTracksPerCluster++;
       fTrackID_cluster.push_back(i);
     }

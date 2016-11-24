@@ -69,6 +69,9 @@ BClusterProducer::BClusterProducer(const char *name, const char *title)
 
   h_ntracks=new TH1F("h_ntracks","h_ntracks",100,0,100);
   h_ntracks_6hits3strings=new TH1F("h_ntracks_6hits3strings","h_ntracks_6hits3strings",100,0,100);
+  h_tracks_minDR=new TH1F("h_tracks_minDR","h_tracks_minDR",100,0,100);
+  h_tracks_maxDR=new TH1F("h_tracks_maxDR","h_tracks_maxDR",100,0,100);
+
   h_debug=new TH1F("h_debug","h_debug",100, 0,1);
   
   h_strClu_ntracks=new TH1F("h_strClu_ntracks","h_strClu_ntracks",20,0,20);
@@ -186,11 +189,10 @@ Bool_t BClusterProducer::Filter()
   for (int iPulse=0; iPulse<impulse_n; iPulse++){
     if (fInputEventMask->GetFlag(iPulse)==0) continue;
     int iChannel=fEvent->GetImpulse(iPulse)->GetChannelID();
-    //exclude trigger string:
     int iString=int(floor(iChannel/24));
     string_impulses[iString].push_back(iPulse);
-   }
-
+  }
+  
   //build string clusters
   std::vector<BStringCluster> stringClusters[8];
   for (int iString=0; iString<8; iString++){
@@ -199,7 +201,23 @@ Bool_t BClusterProducer::Filter()
     float max=-1;
     BStringCluster leadingCluster;
     for (int k=0; k<stringClusters[iString].size(); k++){
-      if (stringClusters[iString][k].GetSize()>4) h_strClu_ntracks->Fill(stringClusters[iString][k].GetNSignalTracks(),1);
+      if (stringClusters[iString][k].GetSize()>=4){
+	h_strClu_ntracks->Fill(stringClusters[iString][k].GetNSignalTracks(),1);
+	// study size of muon bundle giving input to cluster
+	float minDist=10000;
+	float maxDist=-10000;
+	std::vector<int> trackIDs=stringClusters[iString][k].GetTracks();
+	for (int iTr=0; iTr<trackIDs.size(); iTr++){
+	  for (int iTr1=iTr+1; iTr1<trackIDs.size(); iTr1++){
+	    float dist=getMuonDist(trackIDs[iTr], trackIDs[iTr1]);
+	    if (dist<minDist) minDist=dist;
+	    if (dist>maxDist) maxDist=dist;
+	  }
+	}
+	h_tracks_minDR->Fill(minDist,1);
+	h_tracks_maxDR->Fill(maxDist,1);
+	//
+      }
       if (max<stringClusters[iString][k].GetHotSpotAmpl()){
 	max=stringClusters[iString][k].GetHotSpotAmpl();
 	leadingCluster=stringClusters[iString][k];
@@ -324,7 +342,7 @@ std::vector<BStringCluster> BClusterProducer::findHotSpots(int iString, std::vec
       if (abs(id_increment)==1&&
 	  fEvent->GetImpulse(string_impulses[iCand])->GetAmplitude()>fSignalCut_hotspot2){
 	float timeCand=fEvent->GetImpulse(string_impulses[iCand])->GetTime();
-	if (fabs(timeCand-timePulse)<(abs(id_increment)*15/cWater+fSafetyWindow)&&(!isClustered[iCand])){
+	if (fabs(timeCand-timePulse)<=(abs(id_increment)*15/cWater+fSafetyWindow)&&(!isClustered[iCand])){
 	  std::vector<int> spot;
 	  spot.push_back(string_impulses[iCand]);
 	  spot.push_back(string_impulses[iPulse]);
@@ -565,6 +583,8 @@ Int_t BClusterProducer::PostProcess()
   fOUT->cd();
   h_ntracks->Write();
   h_ntracks_6hits3strings->Write();
+  h_tracks_minDR->Write();
+  h_tracks_maxDR->Write();
   h_debug->Write();
   h_strClu_ntracks->Write();
   h_gloClu_ntracks->Write();
@@ -578,8 +598,11 @@ float BClusterProducer::getTrackDistanceToOM(TVector3 initialPoint, TVector3 dir
 {
   TVector3 diff(xyzOM.X()-initialPoint.X(),xyzOM.Y()-initialPoint.Y(),xyzOM.Z()-initialPoint.Z());
 
-  float absDir=direction.Mag();
+  float angle=diff.Angle(direction);
 
+  float dist=diff.Mag()*sin(angle);
+  
+  /*
   float scalarProd=diff.Dot(direction);
 
   float cosAlpha=scalarProd/(diff.Mag()*absDir);
@@ -589,7 +612,8 @@ float BClusterProducer::getTrackDistanceToOM(TVector3 initialPoint, TVector3 dir
   if (cosAlpha*cosAlpha>1) cosAlpha=1;
   
   float dist=diff.Mag()*sqrt(1-cosAlpha*cosAlpha);
-
+  */
+  
   return dist;
 }
 /*
@@ -817,4 +841,30 @@ std::pair<float,float> BClusterProducer::getPolarEstimate_string(BStringCluster 
 
   return (std::make_pair(thetaMin_max, thetaMax_min));
     
+}
+
+
+float BClusterProducer::getMuonDist(int muID1, int muID2)
+{
+  TVector3 inPo1(fMCEvent->GetTrack(muID1)->GetX(),
+		 fMCEvent->GetTrack(muID1)->GetY(),
+		 fMCEvent->GetTrack(muID1)->GetZ());
+  TVector3 inPo2(fMCEvent->GetTrack(muID2)->GetX(),
+		 fMCEvent->GetTrack(muID2)->GetY(),
+		 fMCEvent->GetTrack(muID2)->GetZ());
+  
+  float primThetaRad=M_PI*fMCEvent->GetPrimaryParticlePolar()/180;
+  float primPhiRad=M_PI*fMCEvent->GetPrimaryParticleAzimuth()/180;
+  
+  TVector3 genVec(sin(primThetaRad)*cos(primPhiRad),
+		  sin(primThetaRad)*sin(primPhiRad),
+		  cos(primThetaRad));
+
+  TVector3 dInPo(inPo1.X()-inPo2.X(),inPo1.Y()-inPo2.Y(),inPo1.Z()-inPo2.Z());
+
+  float angle=dInPo.Angle(genVec);
+
+  float dR=dInPo.Mag()*sin(angle);
+  
+  return dR;
 }

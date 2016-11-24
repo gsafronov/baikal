@@ -54,6 +54,8 @@ class BClusterProducer : public BFilter
   float getTrackDistanceToOM(TVector3 initialPoint, TVector3 direction, TVector3 xyzOM);
 
   int runWPscan(std::vector<int>* string_impulses, std::vector<bool> noiseOMs_gen, std::vector<bool> signalOMs_gen, std::vector<bool> signalStrings_gen);
+
+  float getMuonDist(int id1, int id2);
   
   int sgn(float x);
 
@@ -91,6 +93,8 @@ class BClusterProducer : public BFilter
 
   TH1F* h_ntracks;
   TH1F* h_ntracks_6hits3strings;
+  TH1F* h_tracks_minDR;
+  TH1F* h_tracks_maxDR;
   TH1F* h_debug;
   TH2F* h_gloClu_vs_firedStrings;
   TH1F* h_strClu_ntracks;
